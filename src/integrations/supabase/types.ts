@@ -14,7 +14,102 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      registration_sessions: {
+        Row: {
+          answers: Json
+          created_at: string
+          step: string
+          telegram_chat_id: number
+          telegram_user_id: number
+          telegram_username: string | null
+          updated_at: string
+        }
+        Insert: {
+          answers?: Json
+          created_at?: string
+          step?: string
+          telegram_chat_id: number
+          telegram_user_id: number
+          telegram_username?: string | null
+          updated_at?: string
+        }
+        Update: {
+          answers?: Json
+          created_at?: string
+          step?: string
+          telegram_chat_id?: number
+          telegram_user_id?: number
+          telegram_username?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      registrations: {
+        Row: {
+          birth_year_ec: number
+          christian_name: string
+          created_at: string
+          father_name: string
+          father_phone: string
+          full_name: string
+          id: string
+          mother_name: string
+          mother_phone: string
+          registration_id: string
+          telegram_chat_id: number
+          telegram_user_id: number
+          telegram_username: string | null
+          updated_at: string
+        }
+        Insert: {
+          birth_year_ec: number
+          christian_name: string
+          created_at?: string
+          father_name: string
+          father_phone: string
+          full_name: string
+          id?: string
+          mother_name: string
+          mother_phone: string
+          registration_id?: string
+          telegram_chat_id: number
+          telegram_user_id: number
+          telegram_username?: string | null
+          updated_at?: string
+        }
+        Update: {
+          birth_year_ec?: number
+          christian_name?: string
+          created_at?: string
+          father_name?: string
+          father_phone?: string
+          full_name?: string
+          id?: string
+          mother_name?: string
+          mother_phone?: string
+          registration_id?: string
+          telegram_chat_id?: number
+          telegram_user_id?: number
+          telegram_username?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      telegram_updates: {
+        Row: {
+          created_at: string
+          update_id: number
+        }
+        Insert: {
+          created_at?: string
+          update_id: number
+        }
+        Update: {
+          created_at?: string
+          update_id?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
