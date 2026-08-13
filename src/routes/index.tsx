@@ -3,16 +3,16 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "የእሁድ ት/ቤት ምዝገባ ቦት | Sunday School Registration" },
+      { title: "የሰንበት ት/ቤት ምዝገባ ቦት | Sunday School Registration" },
       {
         name: "description",
         content:
-          "የእሁድ ት/ቤት ተማሪዎች ምዝገባ በቴሌግራም ቦት አማካኝነት። ምዝገባውን በቀላሉ በአማርኛ ይጨርሱ።",
+          "የሰንበት ት/ቤት ተማሪዎች ምዝገባ በቴሌግራም ቦት አማካኝነት። ምዝገባውን በቀላሉ በአማርኛ ይጨርሱ።",
       },
-      { property: "og:title", content: "የእሁድ ት/ቤት ምዝገባ ቦት" },
+      { property: "og:title", content: "የሰንበት ት/ቤት ምዝገባ ቦት" },
       {
         property: "og:description",
-        content: "የእሁድ ት/ቤት ተማሪዎች ምዝገባ በቴሌግራም ቦት አማካኝነት።",
+        content: "የሰንበት ት/ቤት ተማሪዎች ምዝገባ በቴሌግራም ቦት አማካኝነት።",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -24,7 +24,8 @@ export const Route = createFileRoute("/")({
 const steps = [
   "ሙሉ ስም ከነአያት",
   "የክርስትና ስም",
-  "የትውልድ ዘመን",
+  "ጾታ",
+  "የትውልድ ቀን (ቀን/ወር/ዓመት)",
   "የእናት ስም እና ስልክ",
   "የአባት ስም እና ስልክ",
 ];
@@ -34,7 +35,7 @@ function Index() {
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-6 py-16">
       <div className="w-full max-w-md space-y-6 text-center">
         <span className="inline-flex items-center rounded-full bg-secondary px-4 py-1.5 text-sm font-medium text-secondary-foreground">
-          🙏 እሁድ ት/ቤት
+          🙏 ሰንበት ት/ቤት
         </span>
 
         <h1 className="text-3xl font-bold leading-snug text-foreground">
