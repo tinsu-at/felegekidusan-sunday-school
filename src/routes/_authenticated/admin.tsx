@@ -39,7 +39,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { LanguageToggle } from "@/components/language-toggle";
 import { supabase } from "@/integrations/supabase/client";
+import { genderLabel, useUiLang } from "@/lib/ui-i18n";
 import {
   claimFirstAdmin,
   deleteRegistration,
@@ -71,15 +73,17 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminPage,
 });
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "በመጠባበቅ",
-  approved: "ተቀብሏል",
-  rejected: "ተቀባይነት አላገኘም",
+const STATUS_TONE: Record<string, string> = {
+  pending: "bg-accent/25 text-accent-foreground",
+  approved: "bg-primary/12 text-primary",
+  rejected: "bg-destructive/12 text-destructive",
 };
 
 function AdminPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { lang, t } = useUiLang();
+  const tt = t.admin;
   const fetchStatus = useServerFn(getAdminStatus);
   const fetchList = useServerFn(listRegistrations);
   const claim = useServerFn(claimFirstAdmin);
@@ -143,7 +147,8 @@ function AdminPage() {
     };
   }, [regQuery.data]);
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["registrations"] });
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: ["registrations"] });
 
   const signOut = async () => {
     await queryClient.cancelQueries();
@@ -155,7 +160,7 @@ function AdminPage() {
   if (statusQuery.isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">በመጫን ላይ...</p>
+        <p className="text-sm text-muted-foreground">{tt.loading}</p>
       </main>
     );
   }
@@ -164,70 +169,87 @@ function AdminPage() {
     const canClaim = (statusQuery.data?.adminCount ?? 1) === 0;
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6">
-        <div className="max-w-sm space-y-4 text-center">
-          <h1 className="text-xl font-semibold text-foreground">
-            🔒 ፈቃድ አልተሰጠዎትም
+        <div className="w-full max-w-sm space-y-4 rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
+          <LanguageToggle className="mx-auto" />
+          <h1 className="text-xl font-semibold text-card-foreground">
+            {tt.noAccessTitle}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            ይህ ገጽ ለተፈቀደላቸው አስተዳዳሪዎች ብቻ ነው።
-          </p>
+          <p className="text-sm text-muted-foreground">{tt.noAccessBody}</p>
           {canClaim ? (
             <Button
+              className="w-full"
               onClick={async () => {
                 try {
                   await claim({});
-                  toast.success("የአስተዳዳሪ ፈቃድ ተሰጥቷል።");
+                  toast.success(tt.claimed);
                   await statusQuery.refetch();
                 } catch {
-                  toast.error("ፈቃድ መስጠት አልተቻለም።");
+                  toast.error(tt.claimFailed);
                 }
               }}
             >
-              እኔን የመጀመሪያ አስተዳዳሪ አድርግ
+              {tt.claim}
             </Button>
           ) : null}
-          <Button variant="outline" onClick={signOut}>
-            ውጣ
+          <Button variant="outline" className="w-full" onClick={signOut}>
+            {tt.signOut}
           </Button>
         </div>
       </main>
     );
   }
 
-  return (
-    <main className="min-h-screen bg-background px-4 py-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold text-foreground">
-            📋 የሰንበት ት/ቤት ምዝገባ አስተዳደር
-          </h1>
-          <Button variant="outline" onClick={signOut}>
-            ውጣ
-          </Button>
-        </div>
+  const statusOptions = ["pending", "approved", "rejected"] as const;
 
+  return (
+    <main className="min-h-screen bg-background">
+      <header className="brand-gradient text-primary-foreground">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-8">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">
+              {t.brand}
+            </p>
+            <h1 className="mt-1 text-2xl font-bold sm:text-3xl">{tt.title}</h1>
+            <p className="mt-1 text-sm opacity-85">{tt.subtitle}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <LanguageToggle />
+            <Button
+              variant="secondary"
+              onClick={signOut}
+              className="rounded-full"
+            >
+              {tt.signOut}
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
-            { label: "📊 ጠቅላላ ምዝገባ", value: stats.total },
-            { label: "📅 የዛሬ ምዝገባ", value: stats.today },
-            { label: "📅 የዚህ ሳምንት ምዝገባ", value: stats.week },
-            { label: "📅 የዚህ ወር ምዝገባ", value: stats.month },
+            { label: tt.total, value: stats.total, icon: "📊" },
+            { label: tt.today, value: stats.today, icon: "📅" },
+            { label: tt.week, value: stats.week, icon: "🗓️" },
+            { label: tt.month, value: stats.month, icon: "📈" },
           ].map((s) => (
             <div
               key={s.label}
-              className="rounded-xl border border-border bg-card p-4"
+              className="rounded-2xl border border-border bg-card p-5 shadow-sm"
             >
-              <p className="text-xs text-muted-foreground">{s.label}</p>
-              <p className="mt-1 text-2xl font-bold text-card-foreground">
+              <p className="text-xs font-medium text-muted-foreground">
+                {s.icon} {s.label}
+              </p>
+              <p className="mt-2 text-3xl font-bold text-card-foreground">
                 {s.value}
               </p>
             </div>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
           <Input
-            placeholder="🔍 ስም፣ የክርስትና ስም፣ የምዝገባ ቁጥር ወይም ስልክ ይፈልጉ"
+            placeholder={`🔍 ${tt.search}`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="max-w-sm"
@@ -238,58 +260,77 @@ function AdminPage() {
                 key={g}
                 size="sm"
                 variant={gender === g ? "default" : "outline"}
+                className="rounded-full"
                 onClick={() => setGender(g)}
               >
-                {g === "all" ? "ሁሉም" : g}
+                {g === "all" ? tt.all : genderLabel(g, lang)}
               </Button>
             ))}
           </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            onClick={() => void refresh()}
+          >
+            ↻ {tt.refresh}
+          </Button>
+          <p className="w-full text-xs text-muted-foreground">
+            {tt.showing(rows.length, stats.total)}
+          </p>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-border">
+        <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-sm">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>የምዝገባ ቁጥር</TableHead>
-                <TableHead>ሙሉ ስም</TableHead>
-                <TableHead>የክርስትና ስም</TableHead>
-                <TableHead>ጾታ</TableHead>
-                <TableHead>የትውልድ ዘመን</TableHead>
-                <TableHead>የእናት ስም</TableHead>
-                <TableHead>የእናት ስልክ</TableHead>
-                <TableHead>የአባት ስም</TableHead>
-                <TableHead>የአባት ስልክ</TableHead>
-                <TableHead>የምዝገባ ቀን</TableHead>
-                <TableHead>ሁኔታ</TableHead>
-                <TableHead />
+              <TableRow className="bg-muted/60">
+                <TableHead>{tt.columns.regId}</TableHead>
+                <TableHead>{tt.columns.fullName}</TableHead>
+                <TableHead>{tt.columns.christianName}</TableHead>
+                <TableHead>{tt.columns.gender}</TableHead>
+                <TableHead>{tt.columns.birthDate}</TableHead>
+                <TableHead>{tt.columns.motherName}</TableHead>
+                <TableHead>{tt.columns.motherPhone}</TableHead>
+                <TableHead>{tt.columns.fatherName}</TableHead>
+                <TableHead>{tt.columns.fatherPhone}</TableHead>
+                <TableHead>{tt.columns.created}</TableHead>
+                <TableHead>{tt.columns.status}</TableHead>
+                <TableHead>{tt.columns.actions}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {regQuery.isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={12}>በመጫን ላይ...</TableCell>
+                  <TableCell colSpan={12}>{tt.loading}</TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12}>ምዝገባ አልተገኘም።</TableCell>
+                  <TableCell
+                    colSpan={12}
+                    className="py-10 text-center text-muted-foreground"
+                  >
+                    {tt.empty}
+                  </TableCell>
                 </TableRow>
               ) : (
                 rows.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-medium">
+                  <TableRow key={r.id} className="hover:bg-muted/40">
+                    <TableCell className="font-semibold text-primary">
                       {r.registration_id}
                     </TableCell>
                     <TableCell>{r.full_name}</TableCell>
                     <TableCell>{r.christian_name}</TableCell>
-                    <TableCell>{r.gender}</TableCell>
-                    <TableCell>
-                      {r.birth_date_ec ?? r.birth_year_ec}
-                    </TableCell>
+                    <TableCell>{genderLabel(r.gender, lang)}</TableCell>
+                    <TableCell>{r.birth_date_ec ?? r.birth_year_ec}</TableCell>
                     <TableCell>{r.mother_name}</TableCell>
-                    <TableCell>{r.mother_phone}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {r.mother_phone}
+                    </TableCell>
                     <TableCell>{r.father_name}</TableCell>
-                    <TableCell>{r.father_phone}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {r.father_phone}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {new Date(r.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
@@ -297,21 +338,25 @@ function AdminPage() {
                         value={r.status}
                         onValueChange={async (value) => {
                           try {
-                            await doStatus({ data: { id: r.id, status: value as "pending" } });
-                            toast.success("ሁኔታው ተቀይሯል።");
+                            await doStatus({
+                              data: { id: r.id, status: value as "pending" },
+                            });
+                            toast.success(tt.statusChanged);
                             await refresh();
                           } catch {
-                            toast.error("ሁኔታውን መቀየር አልተቻለም።");
+                            toast.error(tt.statusFailed);
                           }
                         }}
                       >
-                        <SelectTrigger className="w-36">
+                        <SelectTrigger
+                          className={`w-36 rounded-full border-0 text-xs font-semibold ${STATUS_TONE[r.status] ?? ""}`}
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {Object.entries(STATUS_LABEL).map(([v, label]) => (
+                          {statusOptions.map((v) => (
                             <SelectItem key={v} value={v}>
-                              {label}
+                              {tt.status[v]}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -324,17 +369,17 @@ function AdminPage() {
                           variant="outline"
                           onClick={() => setViewing(r)}
                         >
-                          ዝርዝር
+                          {tt.view}
                         </Button>
                         <Button size="sm" onClick={() => setEditing(r)}>
-                          አስተካክል
+                          {tt.edit}
                         </Button>
                         <Button
                           size="sm"
                           variant="destructive"
                           onClick={() => setDeleting(r)}
                         >
-                          ሰርዝ
+                          {tt.delete}
                         </Button>
                       </div>
                     </TableCell>
@@ -350,23 +395,32 @@ function AdminPage() {
       <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>የምዝገባ ዝርዝር</DialogTitle>
+            <DialogTitle>{tt.detailsTitle}</DialogTitle>
           </DialogHeader>
           {viewing ? (
             <dl className="space-y-2 text-sm">
               {[
-                ["🆔 የምዝገባ ቁጥር", viewing.registration_id],
-                ["👤 ሙሉ ስም", viewing.full_name],
-                ["✝️ የክርስትና ስም", viewing.christian_name],
-                ["⚥ ጾታ", viewing.gender],
-                ["🎂 የትውልድ ዘመን", viewing.birth_date_ec ?? String(viewing.birth_year_ec)],
-                ["👩 የእናት ስም", viewing.mother_name],
-                ["📞 የእናት ስልክ", viewing.mother_phone],
-                ["👨 የአባት ስም", viewing.father_name],
-                ["📞 የአባት ስልክ", viewing.father_phone],
-                ["ሁኔታ", STATUS_LABEL[viewing.status] ?? viewing.status],
+                [`🆔 ${tt.columns.regId}`, viewing.registration_id],
+                [`👤 ${tt.columns.fullName}`, viewing.full_name],
+                [`✝️ ${tt.columns.christianName}`, viewing.christian_name],
+                [`⚥ ${tt.columns.gender}`, genderLabel(viewing.gender, lang)],
+                [
+                  `🎂 ${tt.columns.birthDate}`,
+                  viewing.birth_date_ec ?? String(viewing.birth_year_ec),
+                ],
+                [`👩 ${tt.columns.motherName}`, viewing.mother_name],
+                [`📞 ${tt.columns.motherPhone}`, viewing.mother_phone],
+                [`👨 ${tt.columns.fatherName}`, viewing.father_name],
+                [`📞 ${tt.columns.fatherPhone}`, viewing.father_phone],
+                [
+                  tt.columns.status,
+                  tt.status[viewing.status] ?? viewing.status,
+                ],
               ].map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-4">
+                <div
+                  key={k}
+                  className="flex justify-between gap-4 border-b border-border/60 pb-2 last:border-0"
+                >
                   <dt className="text-muted-foreground">{k}</dt>
                   <dd className="font-medium text-foreground">{v}</dd>
                 </div>
@@ -380,7 +434,7 @@ function AdminPage() {
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>ምዝገባ አስተካክል</DialogTitle>
+            <DialogTitle>{tt.editTitle}</DialogTitle>
           </DialogHeader>
           {editing ? (
             <form
@@ -403,26 +457,30 @@ function AdminPage() {
                       status: editing.status as "pending",
                     },
                   });
-                  toast.success("ተስተካክሏል።");
+                  toast.success(tt.saved);
                   setEditing(null);
                   await refresh();
                 } catch {
-                  toast.error("ማስተካከል አልተቻለም። መረጃውን ያረጋግጡ።");
+                  toast.error(tt.saveFailed);
                 }
               }}
             >
               {[
-                ["full_name", "ሙሉ ስም", editing.full_name],
-                ["christian_name", "የክርስትና ስም", editing.christian_name],
+                ["full_name", tt.columns.fullName, editing.full_name],
+                [
+                  "christian_name",
+                  tt.columns.christianName,
+                  editing.christian_name,
+                ],
                 [
                   "birth_date_ec",
-                  "የትውልድ ዘመን (ቀን/ወር/ዓመት)",
+                  `${tt.columns.birthDate} (DD/MM/YYYY)`,
                   editing.birth_date_ec ?? "",
                 ],
-                ["mother_name", "የእናት ስም", editing.mother_name],
-                ["mother_phone", "የእናት ስልክ", editing.mother_phone],
-                ["father_name", "የአባት ስም", editing.father_name],
-                ["father_phone", "የአባት ስልክ", editing.father_phone],
+                ["mother_name", tt.columns.motherName, editing.mother_name],
+                ["mother_phone", tt.columns.motherPhone, editing.mother_phone],
+                ["father_name", tt.columns.fatherName, editing.father_name],
+                ["father_phone", tt.columns.fatherPhone, editing.father_phone],
               ].map(([name, label, value]) => (
                 <div key={name} className="space-y-1">
                   <Label htmlFor={name}>{label}</Label>
@@ -430,19 +488,19 @@ function AdminPage() {
                 </div>
               ))}
               <div className="space-y-1">
-                <Label htmlFor="gender">ጾታ</Label>
+                <Label htmlFor="gender">{tt.columns.gender}</Label>
                 <select
                   id="gender"
                   name="gender"
                   defaultValue={editing.gender}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
                 >
-                  <option value="ወንድ">ወንድ</option>
-                  <option value="ሴት">ሴት</option>
+                  <option value="ወንድ">{genderLabel("ወንድ", lang)}</option>
+                  <option value="ሴት">{genderLabel("ሴት", lang)}</option>
                 </select>
               </div>
               <DialogFooter>
-                <Button type="submit">አስቀምጥ</Button>
+                <Button type="submit">{tt.save}</Button>
               </DialogFooter>
             </form>
           ) : null}
@@ -450,30 +508,33 @@ function AdminPage() {
       </Dialog>
 
       {/* Delete */}
-      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>ምዝገባውን ይሰርዙ?</AlertDialogTitle>
+            <AlertDialogTitle>{tt.deleteTitle}</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleting?.registration_id} — ይህ እርምጃ መመለስ አይችልም።
+              {deleting?.registration_id} — {tt.deleteBody}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>አይ</AlertDialogCancel>
+            <AlertDialogCancel>{tt.cancel}</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
                 if (!deleting) return;
                 try {
                   await doDelete({ data: { id: deleting.id } });
-                  toast.success("ተሰርዟል።");
+                  toast.success(tt.deleted);
                   setDeleting(null);
                   await refresh();
                 } catch {
-                  toast.error("መሰረዝ አልተቻለም።");
+                  toast.error(tt.deleteFailed);
                 }
               }}
             >
-              አዎ፣ ሰርዝ
+              {tt.delete}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
