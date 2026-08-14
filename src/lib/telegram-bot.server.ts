@@ -1,8 +1,11 @@
 /**
- * Server-only Telegram bot logic for ሰንበት ት/ቤት registration (Phase 2).
+ * Server-only Telegram bot logic for ሰንበት ት/ቤት registration.
+ * Bilingual (አማርኛ / English); language preference is stored per Telegram user id.
  * The bot token is read from process.env inside functions and is never
  * returned, logged, stored in the database, or exposed to the client.
  */
+
+import { T, asLang, type Lang } from "@/lib/telegram-i18n";
 
 type TelegramUpdate = {
   update_id?: number;
@@ -34,71 +37,47 @@ const STEPS = [
 type Step = (typeof STEPS)[number];
 type FieldStep = Exclude<Step, "confirm">;
 
-const QUESTIONS: Record<FieldStep, string> = {
-  full_name: "1️⃣ ሙሉ ስም ከነአያት\n\nእባክዎ ሙሉ ስምዎን በአማርኛ ያስገቡ።",
-  christian_name: "2️⃣ የክርስትና ስም\n\nእባክዎ የክርስትና ስምዎን በአማርኛ ያስገቡ።",
-  gender: "3️⃣ ጾታ\n\nእባክዎ ጾታዎን ይምረጡ።",
-  birth_date_ec:
-    "4️⃣ የትውልድ ቀን\n\nእባክዎ የትውልድ ቀኑን በኢትዮጵያ አቆጣጠር ሙሉ በሙሉ ያስገቡ።\n\nቅርጸት፦ ቀን/ወር/ዓመት\nለምሳሌ፦ 15/03/2012",
-  mother_name: "5️⃣ የእናት ስም\n\nእባክዎ የእናቱን ሙሉ ስም ከነአያት በአማርኛ ያስገቡ።",
-  mother_phone:
-    "6️⃣ የእናት ስልክ\n\nእባክዎ የእናቱን ስልክ ቁጥር ያስገቡ።\n\nለምሳሌ፦ 0912345678 ወይም +251912345678",
-  father_name: "7️⃣ የአባት ስም\n\nእባክዎ የአባቱን ሙሉ ስም ከነአያት በአማርኛ ያስገቡ።",
-  father_phone:
-    "8️⃣ የአባት ስልክ\n\nእባክዎ የአባቱን ስልክ ቁጥር ያስገቡ።\n\nለምሳሌ፦ 0912345678 ወይም +251912345678",
-};
+// ---------- Keyboards ----------
 
-const WELCOME =
-  "🙏 እንኳን ወደ ሰንበት ት/ቤት ምዝገባ በደህና መጡ!\n\nየተማሪውን መረጃ በመሙላት ለምዝገባ ይጀምሩ።";
-
-const CONTACTS =
-  "📞 ለተጨማሪ መረጃ እባክዎ ያነጋግሩ፦\n\nግንኙነት ክፍል - ቤተልሔም ዓለም\n0977966450\n\nትምህርት ክፍል - ዲ/ን ትንሣኤ ጸጋዬ\n0902872151";
-
-const HELP_TEXT = [
-  "📖 ስለ ምዝገባው ተጨማሪ መረጃ",
-  "",
-  "የሰንበት ት/ቤት ምዝገባ ለማድረግ እባክዎ የሚጠየቁትን የተማሪ እና የወላጆች መረጃ በትክክል ያስገቡ።",
-  "",
-  "ለተጨማሪ መረጃ ወይም ጥያቄ ከሚከተሉት ክፍሎች ጋር ይገናኙ።",
-  "",
-  "📞 ግንኙነት ክፍል - ቤተልሔም ዓለም",
-  "0977966450",
-  "",
-  "📚 ትምህርት ክፍል - ዲ/ን ትንሣኤ ጸጋዬ",
-  "0902872151",
-].join("\n");
-
-const START_KEYBOARD = {
+const LANGUAGE_KEYBOARD = {
   inline_keyboard: [
-    [{ text: "📝 ምዝገባ ጀምር", callback_data: "start_reg" }],
-    [{ text: "❓ እገዛ / ተጨማሪ መረጃ", callback_data: "help" }],
+    [{ text: "🇪🇹 አማርኛ", callback_data: "lang_am" }],
+    [{ text: "🇬🇧 English", callback_data: "lang_en" }],
   ],
 };
 
-const HELP_KEYBOARD = {
+const startKeyboard = (lang: Lang) => ({
   inline_keyboard: [
-    [{ text: "📝 ምዝገባ ጀምር", callback_data: "start_reg" }],
-    [{ text: "⬅️ ወደ መነሻ", callback_data: "home" }],
+    [{ text: T[lang].btnStart, callback_data: "start_reg" }],
+    [{ text: T[lang].btnHelp, callback_data: "help" }],
+    [{ text: T[lang].btnLanguage, callback_data: "language" }],
   ],
-};
+});
 
-const GENDER_KEYBOARD = {
+const helpKeyboard = (lang: Lang) => ({
   inline_keyboard: [
-    [{ text: "ወንድ", callback_data: "gender_male" }],
-    [{ text: "ሴት", callback_data: "gender_female" }],
+    [{ text: T[lang].btnStart, callback_data: "start_reg" }],
+    [{ text: `⬅️ ${T[lang].btnHome}`, callback_data: "home" }],
   ],
-};
+});
 
-const CONFIRM_KEYBOARD = {
+const genderKeyboard = (lang: Lang) => ({
   inline_keyboard: [
-    [{ text: "✅ አዎ፣ አረጋግጣለሁ", callback_data: "confirm_yes" }],
-    [{ text: "❌ ሰርዝ", callback_data: "confirm_no" }],
+    [{ text: T[lang].btnMale, callback_data: "gender_male" }],
+    [{ text: T[lang].btnFemale, callback_data: "gender_female" }],
   ],
-};
+});
 
-const HOME_KEYBOARD = {
-  inline_keyboard: [[{ text: "🏠 ወደ መነሻ", callback_data: "home" }]],
-};
+const confirmKeyboard = (lang: Lang) => ({
+  inline_keyboard: [
+    [{ text: T[lang].btnConfirm, callback_data: "confirm_yes" }],
+    [{ text: T[lang].btnCancel, callback_data: "confirm_no" }],
+  ],
+});
+
+const homeKeyboard = (lang: Lang) => ({
+  inline_keyboard: [[{ text: T[lang].btnHome, callback_data: "home" }]],
+});
 
 // ---------- Telegram API ----------
 
@@ -123,6 +102,20 @@ async function sendMessage(chatId: number, text: string, keyboard?: unknown) {
     text,
     ...(keyboard ? { reply_markup: keyboard } : {}),
   });
+}
+
+/** Notifies the school admin chat about a new registration, if configured. */
+async function notifyAdmin(lines: string[]) {
+  const adminChatId = process.env["TELEGRAM_ADMIN_CHAT_ID"];
+  if (!adminChatId) return;
+  try {
+    await telegram("sendMessage", {
+      chat_id: adminChatId,
+      text: lines.join("\n"),
+    });
+  } catch {
+    console.error("Admin notification could not be delivered");
+  }
 }
 
 // ---------- Validation ----------
@@ -159,17 +152,21 @@ function currentEthiopianYear(): number {
 
 /** Only Ethiopic letters, separated by single spaces. */
 const ETHIOPIC_WORD = /^[\u1200-\u137F]+$/;
+const LATIN_WORD = /^[A-Za-z][A-Za-z'’.-]*$/;
 
 function validateAmharicName(
   value: string,
   exactWords: number | null,
+  lang: Lang,
 ): string | null {
   const name = value.trim().replace(/\s+/g, " ");
   if (!name) return null;
   const words = name.split(" ");
   if (exactWords !== null && words.length !== exactWords) return null;
   if (exactWords === null && (words.length < 1 || words.length > 3)) return null;
-  if (!words.every((w) => ETHIOPIC_WORD.test(w))) return null;
+  const ok = (w: string) =>
+    ETHIOPIC_WORD.test(w) || (lang === "en" && LATIN_WORD.test(w));
+  if (!words.every(ok)) return null;
   if (name.length > 100) return null;
   return name;
 }
@@ -208,27 +205,33 @@ function validatePhone(value: string): string | null {
 
 type Answers = Partial<Record<FieldStep, string>> & { reg_id?: string };
 
-function summary(a: Answers): string {
-  return [
-    "📋 ያስገቡት መረጃ",
-    "",
-    `🆔 የምዝገባ ቁጥር፦ ${a.reg_id}`,
-    "",
-    `👤 ሙሉ ስም፦ ${a.full_name}`,
-    `✝️ የክርስትና ስም፦ ${a.christian_name}`,
-    `⚥ ጾታ፦ ${a.gender}`,
-    `🎂 የትውልድ ዘመን፦ ${a.birth_date_ec}`,
-    `👩 የእናት ስም፦ ${a.mother_name}`,
-    `📞 የእናት ስልክ፦ ${a.mother_phone}`,
-    `👨 የአባት ስም፦ ${a.father_name}`,
-    `📞 የአባት ስልክ፦ ${a.father_phone}`,
-    "",
-    "መረጃው ትክክል ነው?",
-  ].join("\n");
+/** Stored gender values stay Amharic; only the display label is translated. */
+function genderLabel(stored: string | undefined, lang: Lang): string {
+  if (stored === "ወንድ") return T[lang].gender.male;
+  if (stored === "ሴት") return T[lang].gender.female;
+  return stored ?? "";
 }
 
-const NAME_ERROR = "❌ እባክዎ ስሙን በአማርኛ በሦስት ቃላት ብቻ ያስገቡ።";
-const CHRISTIAN_NAME_ERROR = "❌ እባክዎ የክርስትና ስሙን በአማርኛ ብቻ ያስገቡ።";
+function summary(a: Answers, lang: Lang): string {
+  const t = T[lang];
+  const L = t.labels;
+  return [
+    t.summaryTitle,
+    "",
+    `${L.regId}: ${a.reg_id}`,
+    "",
+    `${L.fullName}: ${a.full_name}`,
+    `${L.christianName}: ${a.christian_name}`,
+    `${L.gender}: ${genderLabel(a.gender, lang)}`,
+    `${L.birthDate}: ${a.birth_date_ec}`,
+    `${L.motherName}: ${a.mother_name}`,
+    `${L.motherPhone}: ${a.mother_phone}`,
+    `${L.fatherName}: ${a.father_name}`,
+    `${L.fatherPhone}: ${a.father_phone}`,
+    "",
+    t.summaryQuestion,
+  ].join("\n");
+}
 
 // ---------- Update handling ----------
 
@@ -255,14 +258,33 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     await telegram("answerCallbackQuery", { callback_query_id: cb.id });
   }
 
-  const { data: session } = await supabaseAdmin
-    .from("registration_sessions")
-    .select("step, answers")
-    .eq("telegram_user_id", userId)
-    .maybeSingle();
+  const [{ data: session }, { data: pref }] = await Promise.all([
+    supabaseAdmin
+      .from("registration_sessions")
+      .select("step, answers")
+      .eq("telegram_user_id", userId)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("bot_user_prefs")
+      .select("lang")
+      .eq("telegram_user_id", userId)
+      .maybeSingle(),
+  ]);
 
+  let lang: Lang = asLang(pref?.lang);
+  const knownLanguage = !!pref;
   const answers: Answers = (session?.answers as Answers | null) ?? {};
   const step = (session?.step as Step | "idle" | undefined) ?? "idle";
+
+  const saveLanguage = async (next: Lang) => {
+    lang = next;
+    await supabaseAdmin
+      .from("bot_user_prefs")
+      .upsert(
+        { telegram_user_id: userId, lang: next },
+        { onConflict: "telegram_user_id" },
+      );
+  };
 
   const saveSession = async (nextStep: Step | "idle", nextAnswers: Answers) => {
     await supabaseAdmin.from("registration_sessions").upsert(
@@ -293,7 +315,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     }
     const withId: Answers = { ...nextAnswers, ...(regId ? { reg_id: regId } : {}) };
     await saveSession("confirm", withId);
-    await sendMessage(chatId, summary(withId), CONFIRM_KEYBOARD);
+    await sendMessage(chatId, summary(withId, lang), confirmKeyboard(lang));
   };
 
   const askNext = async (nextStep: Step, nextAnswers: Answers) => {
@@ -303,33 +325,46 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     }
     await saveSession(nextStep, nextAnswers);
     if (nextStep === "gender") {
-      await sendMessage(chatId, QUESTIONS.gender, GENDER_KEYBOARD);
+      await sendMessage(chatId, T[lang].questions.gender, genderKeyboard(lang));
     } else {
-      await sendMessage(chatId, QUESTIONS[nextStep]);
+      await sendMessage(chatId, T[lang].questions[nextStep]);
     }
   };
+
+  // --- Language selection ---
+  if (cb?.data === "lang_am" || cb?.data === "lang_en") {
+    await saveLanguage(cb.data === "lang_en" ? "en" : "am");
+    await sendMessage(chatId, T[lang].languageSet);
+    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
+    return;
+  }
+
+  if (cb?.data === "language") {
+    await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD);
+    return;
+  }
 
   // --- Button presses ---
   if (cb?.data === "start_reg") {
     await saveSession("full_name", {});
-    await sendMessage(chatId, QUESTIONS.full_name);
+    await sendMessage(chatId, T[lang].questions.full_name);
     return;
   }
 
   if (cb?.data === "help") {
-    await sendMessage(chatId, HELP_TEXT, HELP_KEYBOARD);
+    await sendMessage(chatId, T[lang].help, helpKeyboard(lang));
     return;
   }
 
   if (cb?.data === "home") {
     await clearSession();
-    await sendMessage(chatId, WELCOME, START_KEYBOARD);
+    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
     return;
   }
 
   if (cb?.data === "gender_male" || cb?.data === "gender_female") {
     if (step !== "gender") {
-      await sendMessage(chatId, WELCOME, START_KEYBOARD);
+      await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
       return;
     }
     const gender = cb.data === "gender_male" ? "ወንድ" : "ሴት";
@@ -339,14 +374,14 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
 
   if (cb?.data === "confirm_no") {
     await clearSession();
-    await sendMessage(chatId, "❌ ምዝገባው ተሰርዟል። ምንም መረጃ አልተቀመጠም።");
-    await sendMessage(chatId, WELCOME, START_KEYBOARD);
+    await sendMessage(chatId, T[lang].cancelled);
+    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
     return;
   }
 
   if (cb?.data === "confirm_yes") {
     if (step !== "confirm") {
-      await sendMessage(chatId, WELCOME, START_KEYBOARD);
+      await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
       return;
     }
     const date = validateEthiopianDate(answers.birth_date_ec ?? "");
@@ -370,24 +405,51 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
         father_phone: answers.father_phone!,
         status: "pending",
       })
-      .select("registration_id")
+      .select("registration_id, created_at")
       .single();
 
     if (error || !inserted) {
       console.error("Failed to save registration");
-      await sendMessage(
-        chatId,
-        "⚠️ ምዝገባውን ማስቀመጥ አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
-      );
+      await sendMessage(chatId, T[lang].saveFailed);
       return;
     }
 
     await clearSession();
-    await sendMessage(
-      chatId,
-      `✅ የሰንበት ት/ቤት ምዝገባዎ በተሳካ ሁኔታ ተጠናቋል!\n\n🆔 የምዝገባ ቁጥር፦ ${inserted.registration_id}\n\nእባክዎ የምዝገባ ቁጥርዎን ያስቀምጡ።`,
-    );
-    await sendMessage(chatId, CONTACTS, HOME_KEYBOARD);
+
+    // 1) Telegram confirmation to the registrant.
+    await sendMessage(chatId, T[lang].success(inserted.registration_id));
+    await sendMessage(chatId, T[lang].contacts, homeKeyboard(lang));
+
+    // 2) Admin Telegram notification (failures never affect the saved row).
+    await notifyAdmin([
+      "🆕 አዲስ ምዝገባ / New registration",
+      "",
+      `🆔 ${inserted.registration_id}`,
+      `👤 ${answers.full_name}`,
+      `✝️ ${answers.christian_name}`,
+      `⚥ ${answers.gender}`,
+      `🎂 ${date?.formatted ?? answers.birth_date_ec}`,
+    ]);
+
+    // 3) Email confirmation to the school inbox (skipped until email sending is configured).
+    try {
+      const { sendRegistrationEmail } = await import(
+        "@/lib/registration-email.server"
+      );
+      await sendRegistrationEmail({
+        registrationId: inserted.registration_id,
+        fullName: answers.full_name!,
+        christianName: answers.christian_name!,
+        gender: answers.gender!,
+        birthDateEc: date?.formatted ?? answers.birth_date_ec!,
+        motherName: answers.mother_name!,
+        fatherName: answers.father_name!,
+        createdAt: inserted.created_at,
+      });
+    } catch {
+      // Registration is already saved; email problems must never lose it.
+      console.error("Registration confirmation email could not be sent");
+    }
     return;
   }
 
@@ -397,34 +459,43 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
 
   if (text.startsWith("/start")) {
     await clearSession();
-    await sendMessage(chatId, WELCOME, START_KEYBOARD);
+    if (!knownLanguage) {
+      await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD);
+      return;
+    }
+    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
+    return;
+  }
+
+  if (text.startsWith("/language") || text.startsWith("/lang")) {
+    await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD);
     return;
   }
 
   if (text.startsWith("/help")) {
-    await sendMessage(chatId, HELP_TEXT, HELP_KEYBOARD);
+    await sendMessage(chatId, T[lang].help, helpKeyboard(lang));
     return;
   }
 
   if (text.startsWith("/cancel")) {
     await clearSession();
-    await sendMessage(chatId, "❌ ምዝገባው ተሰርዟል።");
-    await sendMessage(chatId, WELCOME, START_KEYBOARD);
+    await sendMessage(chatId, T[lang].cancelled);
+    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
     return;
   }
 
   if (step === "idle" || !STEPS.includes(step as Step)) {
-    await sendMessage(chatId, WELCOME, START_KEYBOARD);
+    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
     return;
   }
 
   if (step === "confirm") {
-    await sendMessage(chatId, summary(answers), CONFIRM_KEYBOARD);
+    await sendMessage(chatId, summary(answers, lang), confirmKeyboard(lang));
     return;
   }
 
   if (step === "gender") {
-    await sendMessage(chatId, QUESTIONS.gender, GENDER_KEYBOARD);
+    await sendMessage(chatId, T[lang].questions.gender, genderKeyboard(lang));
     return;
   }
 
@@ -433,32 +504,26 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   if (step === "birth_date_ec") {
     const date = validateEthiopianDate(text);
     if (!date) {
-      await sendMessage(
-        chatId,
-        `⚠️ የትውልድ ቀኑ ትክክል አይደለም። እባክዎ ሙሉ ቀኑን በኢትዮጵያ አቆጣጠር በቅርጸት ቀን/ወር/ዓመት ያስገቡ (ዓመት ከ1950 እስከ ${currentEthiopianYear()})።\n\nለምሳሌ፦ 15/03/2012`,
-      );
+      await sendMessage(chatId, T[lang].errDate(currentEthiopianYear()));
       return;
     }
     value = date.formatted;
   } else if (step === "mother_phone" || step === "father_phone") {
     value = validatePhone(text);
     if (value === null) {
-      await sendMessage(
-        chatId,
-        "⚠️ የስልክ ቁጥሩ ትክክል አይደለም። እባክዎ የኢትዮጵያ ስልክ ቁጥር ያስገቡ።\n\nለምሳሌ፦ 0912345678 ወይም +251912345678",
-      );
+      await sendMessage(chatId, T[lang].errPhone);
       return;
     }
   } else if (step === "christian_name") {
-    value = validateAmharicName(text, null);
+    value = validateAmharicName(text, null, lang);
     if (value === null) {
-      await sendMessage(chatId, CHRISTIAN_NAME_ERROR);
+      await sendMessage(chatId, T[lang].errChristianName);
       return;
     }
   } else {
-    value = validateAmharicName(text, 3);
+    value = validateAmharicName(text, 3, lang);
     if (value === null) {
-      await sendMessage(chatId, NAME_ERROR);
+      await sendMessage(chatId, T[lang].errName);
       return;
     }
   }

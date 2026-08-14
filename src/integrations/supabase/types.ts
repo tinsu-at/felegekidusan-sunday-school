@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      bot_user_prefs: {
+        Row: {
+          created_at: string
+          lang: string
+          telegram_user_id: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          lang?: string
+          telegram_user_id: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          lang?: string
+          telegram_user_id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       registration_sessions: {
         Row: {
           answers: Json
