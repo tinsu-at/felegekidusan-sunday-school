@@ -46,35 +46,12 @@ export async function sendRegistrationEmail(
   const to = process.env["SCHOOL_NOTIFICATION_EMAIL"];
   if (!to) return { sent: false, reason: "no_recipient" };
 
-  // The managed email templates/helper are generated once a verified sender
-  // domain exists for the project. Until then there is no real send path.
-  const senderDomain = process.env["EMAIL_SENDER_DOMAIN"];
-  if (!senderDomain) {
-    console.warn(
-      `Registration ${input.registrationId}: confirmation email skipped — sender domain not configured`,
-    );
-    return { sent: false, reason: "email_not_configured" };
-  }
-
-  try {
-    const { sendTemplateEmail } = await import(
-      /* @vite-ignore */ "@/lib/email-templates/send-email"
-    );
-    const result = await (
-      sendTemplateEmail as (
-        template: string,
-        to: string,
-        opts: { templateData: Record<string, unknown>; idempotencyKey: string },
-      ) => Promise<{ sent: boolean }>
-    )("registration-confirmation", to, {
-      templateData: { ...input },
-      idempotencyKey: `registration-confirmation-${input.registrationId}`,
-    });
-    return result.sent ? { sent: true } : { sent: false, reason: "send_failed" };
-  } catch {
-    console.error(
-      `Registration ${input.registrationId}: confirmation email send failed`,
-    );
-    return { sent: false, reason: "send_failed" };
-  }
+  // The managed email templates and send helper are generated for this project
+  // once a verified sender domain exists. Until then there is no real send
+  // path, and we never report a success that did not happen.
+  console.warn(
+    `Registration ${input.registrationId}: confirmation email skipped — sender domain not configured`,
+  );
+  return { sent: false, reason: "email_not_configured" };
 }
+
