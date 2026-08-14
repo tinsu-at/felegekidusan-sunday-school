@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
+import { LanguageToggle } from "@/components/language-toggle";
+import { useUiLang } from "@/lib/ui-i18n";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -30,6 +32,8 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { t } = useUiLang();
+  const a = t.auth;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -52,7 +56,7 @@ function AuthPage() {
           options: { emailRedirectTo: window.location.origin },
         });
         if (error) throw error;
-        toast.success("መዝገቡ ተፈጥሯል። ኢሜይልዎን ያረጋግጡ።");
+        toast.success(a.created);
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -63,7 +67,7 @@ function AuthPage() {
       }
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "መግባት አልተቻለም። እባክዎ ይሞክሩ።",
+        error instanceof Error ? error.message : a.failed,
       );
     } finally {
       setLoading(false);
@@ -72,19 +76,22 @@ function AuthPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
-      <div className="w-full max-w-sm space-y-6">
+      <div className="w-full max-w-sm space-y-6 rounded-2xl border border-border bg-card p-8 shadow-sm">
+        <div className="flex justify-center">
+          <LanguageToggle />
+        </div>
         <div className="space-y-2 text-center">
           <h1 className="text-2xl font-bold text-foreground">
-            🔒 የአስተዳዳሪ መግቢያ
+            🔒 {a.title}
           </h1>
           <p className="text-sm text-muted-foreground">
-            የሰንበት ት/ቤት ምዝገባ መረጃ ለተፈቀደላቸው አስተዳዳሪዎች ብቻ ነው።
+            {a.subtitle}
           </p>
         </div>
 
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">ኢሜይል</Label>
+            <Label htmlFor="email">{a.email}</Label>
             <Input
               id="email"
               type="email"
@@ -95,7 +102,7 @@ function AuthPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">የመግቢያ ቃል</Label>
+            <Label htmlFor="password">{a.password}</Label>
             <Input
               id="password"
               type="password"
@@ -109,7 +116,7 @@ function AuthPage() {
             />
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
-            {mode === "signup" ? "መዝገብ ፍጠር" : "ግባ"}
+            {loading ? a.loading : mode === "signup" ? a.signUp : a.signIn}
           </Button>
         </form>
 
@@ -118,7 +125,7 @@ function AuthPage() {
           onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
           className="w-full text-center text-sm text-muted-foreground underline"
         >
-          {mode === "signin" ? "አዲስ መዝገብ ፍጠር" : "ወደ መግቢያ ተመለስ"}
+          {mode === "signin" ? a.toSignUp : a.toSignIn}
         </button>
       </div>
     </main>
