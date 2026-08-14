@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -77,6 +77,13 @@ function Index() {
         <p className="text-xs leading-relaxed text-muted-foreground">
           🔒 የተማሪዎችና የወላጆች መረጃ በሚስጥር ተጠብቆ ይቀመጣል።
         </p>
+
+        <Link
+          to="/auth"
+          className="inline-block text-xs font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
+          🔐 የአስተዳዳሪ መግቢያ (Admin Login)
+        </Link>
       </div>
     </main>
   );
