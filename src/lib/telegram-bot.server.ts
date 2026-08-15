@@ -378,7 +378,8 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   }
 
   if (cb?.data === "help") {
-    await sendMessage(chatId, T[lang].help, helpKeyboard(lang));
+    const help = await helpMessage(lang);
+    await sendMessage(chatId, help.text, helpKeyboard(lang, help.buttons));
     return;
   }
 
@@ -447,7 +448,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     await sendMessage(chatId, T[lang].contacts, homeKeyboard(lang));
 
     // 2) Admin Telegram notification (failures never affect the saved row).
-    await notifyAdmin([
+    await notifyAdmins([
       "🆕 አዲስ ምዝገባ / New registration",
       "",
       `🆔 ${inserted.registration_id}`,
@@ -499,7 +500,19 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   }
 
   if (text.startsWith("/help")) {
-    await sendMessage(chatId, T[lang].help, helpKeyboard(lang));
+    const help = await helpMessage(lang);
+    await sendMessage(chatId, help.text, helpKeyboard(lang, help.buttons));
+    return;
+  }
+
+  // Lets a staff member read their own Telegram id so an owner can add them
+  // as an admin in the dashboard. No other user's data is ever revealed.
+  if (text.startsWith("/id") || text.startsWith("/myid")) {
+    await sendMessage(
+      chatId,
+      `🆔 Telegram ID: ${fromId}\n💬 Chat ID: ${chatId}`,
+      homeKeyboard(lang),
+    );
     return;
   }
 
