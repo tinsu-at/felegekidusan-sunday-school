@@ -54,8 +54,12 @@ const startKeyboard = (lang: Lang) => ({
   ],
 });
 
-const helpKeyboard = (lang: Lang) => ({
+const helpKeyboard = (
+  lang: Lang,
+  buttons: { text: string; url: string }[] = [],
+) => ({
   inline_keyboard: [
+    ...buttons.map((b) => [{ text: b.text, url: b.url }]),
     [{ text: T[lang].btnStart, callback_data: "start_reg" }],
     [{ text: `⬅️ ${T[lang].btnHome}`, callback_data: "home" }],
   ],
