@@ -155,11 +155,14 @@ export const deleteRegistration = createServerFn({ method: "POST" })
 // Owner-only settings: Telegram admins, Help & Information, CSV export
 // ---------------------------------------------------------------------------
 
-type AuthedContext = { supabase: unknown; userId: string };
-
 /** Throws unless the caller holds the owner role. */
 async function assertOwner(context: {
-  supabase: { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown }> };
+  supabase: {
+    rpc: (
+      fn: "has_role",
+      args: { _user_id: string; _role: "owner" },
+    ) => PromiseLike<{ data: unknown }>;
+  };
   userId: string;
 }) {
   const { data } = await context.supabase.rpc("has_role", {
