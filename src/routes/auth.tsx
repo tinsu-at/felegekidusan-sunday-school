@@ -82,6 +82,13 @@ function AuthPage() {
           <LanguageToggle />
         </div>
         <div className="space-y-2 text-center">
+          <img
+            src={logoAsset.url}
+            alt="ሰንበት ት/ቤት"
+            width={80}
+            height={80}
+            className="mx-auto size-20 rounded-full border-2 border-accent/80 object-cover shadow-md"
+          />
           <h1 className="text-2xl font-bold text-foreground">
             🔒 {a.title}
           </h1>
