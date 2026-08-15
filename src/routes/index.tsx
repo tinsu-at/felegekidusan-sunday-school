@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { LanguageToggle } from "@/components/language-toggle";
+import logoAsset from "@/assets/sunday-school-logo.jpg.asset.json";
 import { useUiLang } from "@/lib/ui-i18n";
 
 export const Route = createFileRoute("/")({
@@ -35,6 +36,13 @@ function LandingPage() {
           <div className="flex justify-end">
             <LanguageToggle />
           </div>
+          <img
+            src={logoAsset.url}
+            alt={t.brand}
+            width={128}
+            height={128}
+            className="mt-6 size-28 rounded-full border-4 border-accent/80 bg-background object-cover shadow-lg sm:size-32"
+          />
           <p className="mt-6 inline-flex rounded-full bg-white/15 px-4 py-1.5 text-xs font-semibold tracking-wide">
             {l.badge}
           </p>

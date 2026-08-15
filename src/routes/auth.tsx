@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { LanguageToggle } from "@/components/language-toggle";
+import logoAsset from "@/assets/sunday-school-logo.jpg.asset.json";
 import { useUiLang } from "@/lib/ui-i18n";
 
 export const Route = createFileRoute("/auth")({
