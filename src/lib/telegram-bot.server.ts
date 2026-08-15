@@ -471,7 +471,9 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
         gender: answers.gender!,
         birthDateEc: date?.formatted ?? answers.birth_date_ec!,
         motherName: answers.mother_name!,
+        motherPhone: answers.mother_phone!,
         fatherName: answers.father_name!,
+        fatherPhone: answers.father_phone!,
         createdAt: inserted.created_at,
       });
     } catch {
