@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      bot_admins: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          label: string
+          role: string
+          telegram_chat_id: number
+          telegram_user_id: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label?: string
+          role?: string
+          telegram_chat_id: number
+          telegram_user_id: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label?: string
+          role?: string
+          telegram_chat_id?: number
+          telegram_user_id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bot_user_prefs: {
         Row: {
           created_at: string
@@ -31,6 +64,39 @@ export type Database = {
           created_at?: string
           lang?: string
           telegram_user_id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      help_content: {
+        Row: {
+          announcements: string
+          body: string
+          buttons: Json
+          contacts: string
+          instructions: string
+          lang: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          announcements?: string
+          body?: string
+          buttons?: Json
+          contacts?: string
+          instructions?: string
+          lang: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          announcements?: string
+          body?: string
+          buttons?: Json
+          contacts?: string
+          instructions?: string
+          lang?: string
+          title?: string
           updated_at?: string
         }
         Relationships: []
@@ -182,7 +248,7 @@ export type Database = {
       reserve_registration_id: { Args: never; Returns: string }
     }
     Enums: {
-      app_role: "admin" | "moderator" | "user"
+      app_role: "admin" | "moderator" | "user" | "owner"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -310,7 +376,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "moderator", "user"],
+      app_role: ["admin", "moderator", "user", "owner"],
     },
   },
 } as const

@@ -39,12 +39,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AdminSettingsPanel } from "@/components/admin/settings-panel";
 import { LanguageToggle } from "@/components/language-toggle";
+import logoAsset from "@/assets/sunday-school-logo.jpg.asset.json";
 import { supabase } from "@/integrations/supabase/client";
 import { genderLabel, useUiLang } from "@/lib/ui-i18n";
 import {
   claimFirstAdmin,
   deleteRegistration,
+  exportRegistrationsCsv,
   getAdminStatus,
   listRegistrations,
   setRegistrationStatus,
@@ -90,12 +93,14 @@ function AdminPage() {
   const doUpdate = useServerFn(updateRegistration);
   const doStatus = useServerFn(setRegistrationStatus);
   const doDelete = useServerFn(deleteRegistration);
+  const doExport = useServerFn(exportRegistrationsCsv);
 
   const [search, setSearch] = useState("");
   const [gender, setGender] = useState<"all" | "ወንድ" | "ሴት">("all");
   const [editing, setEditing] = useState<AdminRegistration | null>(null);
   const [viewing, setViewing] = useState<AdminRegistration | null>(null);
   const [deleting, setDeleting] = useState<AdminRegistration | null>(null);
+  const [tab, setTab] = useState<"registrations" | "settings">("registrations");
 
   const statusQuery = useQuery({
     queryKey: ["admin-status"],
@@ -103,6 +108,7 @@ function AdminPage() {
   });
 
   const isAdmin = statusQuery.data?.isAdmin ?? false;
+  const isOwner = statusQuery.data?.isOwner ?? false;
 
   const regQuery = useQuery({
     queryKey: ["registrations"],
@@ -205,12 +211,19 @@ function AdminPage() {
     <main className="min-h-screen bg-background">
       <header className="brand-gradient text-primary-foreground">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-8">
-          <div>
+          <div className="flex items-center gap-4">
+            <img
+              src={logoAsset.url}
+              alt={t.brand}
+              className="h-16 w-16 rounded-full border-2 border-accent/70 bg-background object-cover shadow-md"
+            />
+            <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">
               {t.brand}
             </p>
             <h1 className="mt-1 text-2xl font-bold sm:text-3xl">{tt.title}</h1>
             <p className="mt-1 text-sm opacity-85">{tt.subtitle}</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <LanguageToggle />
@@ -226,6 +239,54 @@ function AdminPage() {
       </header>
 
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+        <div className="flex flex-wrap items-center gap-2">
+          {(
+            [
+              ["registrations", tt.tabRegistrations],
+              ["settings", tt.tabSettings],
+            ] as const
+          ).map(([key, label]) => (
+            <Button
+              key={key}
+              size="sm"
+              variant={tab === key ? "default" : "outline"}
+              className="rounded-full"
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </Button>
+          ))}
+          {isOwner ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="ml-auto rounded-full"
+              onClick={async () => {
+                try {
+                  const { csv } = await doExport({});
+                  const url = URL.createObjectURL(
+                    new Blob([csv], { type: "text/csv;charset=utf-8" }),
+                  );
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `registrations-${new Date().toISOString().slice(0, 10)}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success(tt.exportDone);
+                } catch {
+                  toast.error(tt.exportFailed);
+                }
+              }}
+            >
+              {tt.exportCsv}
+            </Button>
+          ) : null}
+        </div>
+
+        {tab === "settings" ? (
+          <AdminSettingsPanel isOwner={isOwner} />
+        ) : (
+        <>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
             { label: tt.total, value: stats.total, icon: "📊" },
@@ -389,6 +450,8 @@ function AdminPage() {
             </TableBody>
           </Table>
         </div>
+        </>
+        )}
       </div>
 
       {/* Details */}

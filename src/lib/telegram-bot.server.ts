@@ -5,6 +5,7 @@
  * returned, logged, stored in the database, or exposed to the client.
  */
 
+import { helpMessage } from "@/lib/help-content.server";
 import { T, asLang, type Lang } from "@/lib/telegram-i18n";
 
 type TelegramUpdate = {
@@ -54,8 +55,12 @@ const startKeyboard = (lang: Lang) => ({
   ],
 });
 
-const helpKeyboard = (lang: Lang) => ({
+const helpKeyboard = (
+  lang: Lang,
+  buttons: { text: string; url: string }[] = [],
+) => ({
   inline_keyboard: [
+    ...buttons.map((b) => [{ text: b.text, url: b.url }]),
     [{ text: T[lang].btnStart, callback_data: "start_reg" }],
     [{ text: `⬅️ ${T[lang].btnHome}`, callback_data: "home" }],
   ],
@@ -104,17 +109,39 @@ async function sendMessage(chatId: number, text: string, keyboard?: unknown) {
   });
 }
 
-/** Notifies the school admin chat about a new registration, if configured. */
-async function notifyAdmin(lines: string[]) {
-  const adminChatId = process.env["TELEGRAM_ADMIN_CHAT_ID"];
-  if (!adminChatId) return;
+/**
+ * Notifies every active Telegram admin (owner + admins) about a new
+ * registration, plus the configured fallback admin chat. Chat ids are
+ * de-duplicated so nobody receives the same alert twice.
+ */
+async function notifyAdmins(lines: string[]) {
+  const text = lines.join("\n");
+  const targets = new Set<string>();
+
+  const fallback = process.env["TELEGRAM_ADMIN_CHAT_ID"];
+  if (fallback) targets.add(String(fallback).trim());
+
   try {
-    await telegram("sendMessage", {
-      chat_id: adminChatId,
-      text: lines.join("\n"),
-    });
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const { data } = await supabaseAdmin
+      .from("bot_admins")
+      .select("telegram_chat_id")
+      .eq("active", true);
+    for (const row of data ?? []) {
+      if (row.telegram_chat_id) targets.add(String(row.telegram_chat_id));
+    }
   } catch {
-    console.error("Admin notification could not be delivered");
+    console.error("Admin list could not be loaded for notifications");
+  }
+
+  for (const chatId of targets) {
+    try {
+      await telegram("sendMessage", { chat_id: chatId, text });
+    } catch {
+      console.error("Admin notification could not be delivered");
+    }
   }
 }
 
@@ -352,7 +379,8 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   }
 
   if (cb?.data === "help") {
-    await sendMessage(chatId, T[lang].help, helpKeyboard(lang));
+    const help = await helpMessage(lang);
+    await sendMessage(chatId, help.text, helpKeyboard(lang, help.buttons));
     return;
   }
 
@@ -421,7 +449,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     await sendMessage(chatId, T[lang].contacts, homeKeyboard(lang));
 
     // 2) Admin Telegram notification (failures never affect the saved row).
-    await notifyAdmin([
+    await notifyAdmins([
       "🆕 አዲስ ምዝገባ / New registration",
       "",
       `🆔 ${inserted.registration_id}`,
@@ -443,7 +471,9 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
         gender: answers.gender!,
         birthDateEc: date?.formatted ?? answers.birth_date_ec!,
         motherName: answers.mother_name!,
+        motherPhone: answers.mother_phone!,
         fatherName: answers.father_name!,
+        fatherPhone: answers.father_phone!,
         createdAt: inserted.created_at,
       });
     } catch {
@@ -473,7 +503,19 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   }
 
   if (text.startsWith("/help")) {
-    await sendMessage(chatId, T[lang].help, helpKeyboard(lang));
+    const help = await helpMessage(lang);
+    await sendMessage(chatId, help.text, helpKeyboard(lang, help.buttons));
+    return;
+  }
+
+  // Lets a staff member read their own Telegram id so an owner can add them
+  // as an admin in the dashboard. No other user's data is ever revealed.
+  if (text.startsWith("/id") || text.startsWith("/myid")) {
+    await sendMessage(
+      chatId,
+      `🆔 Telegram ID: ${userId}\n💬 Chat ID: ${chatId}`,
+      homeKeyboard(lang),
+    );
     return;
   }
 

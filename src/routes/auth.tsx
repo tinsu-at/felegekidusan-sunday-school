@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { LanguageToggle } from "@/components/language-toggle";
+import logoAsset from "@/assets/sunday-school-logo.jpg.asset.json";
 import { useUiLang } from "@/lib/ui-i18n";
 
 export const Route = createFileRoute("/auth")({
@@ -81,6 +82,13 @@ function AuthPage() {
           <LanguageToggle />
         </div>
         <div className="space-y-2 text-center">
+          <img
+            src={logoAsset.url}
+            alt="ሰንበት ት/ቤት"
+            width={80}
+            height={80}
+            className="mx-auto size-20 rounded-full border-2 border-accent/80 object-cover shadow-md"
+          />
           <h1 className="text-2xl font-bold text-foreground">
             🔒 {a.title}
           </h1>
