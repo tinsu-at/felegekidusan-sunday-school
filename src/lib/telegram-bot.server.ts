@@ -5,6 +5,7 @@
  * returned, logged, stored in the database, or exposed to the client.
  */
 
+import { helpMessage } from "@/lib/help-content.server";
 import { T, asLang, type Lang } from "@/lib/telegram-i18n";
 
 type TelegramUpdate = {
@@ -510,7 +511,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   if (text.startsWith("/id") || text.startsWith("/myid")) {
     await sendMessage(
       chatId,
-      `🆔 Telegram ID: ${fromId}\n💬 Chat ID: ${chatId}`,
+      `🆔 Telegram ID: ${userId}\n💬 Chat ID: ${chatId}`,
       homeKeyboard(lang),
     );
     return;
