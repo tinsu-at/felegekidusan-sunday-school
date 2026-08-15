@@ -108,17 +108,39 @@ async function sendMessage(chatId: number, text: string, keyboard?: unknown) {
   });
 }
 
-/** Notifies the school admin chat about a new registration, if configured. */
-async function notifyAdmin(lines: string[]) {
-  const adminChatId = process.env["TELEGRAM_ADMIN_CHAT_ID"];
-  if (!adminChatId) return;
+/**
+ * Notifies every active Telegram admin (owner + admins) about a new
+ * registration, plus the configured fallback admin chat. Chat ids are
+ * de-duplicated so nobody receives the same alert twice.
+ */
+async function notifyAdmins(lines: string[]) {
+  const text = lines.join("\n");
+  const targets = new Set<string>();
+
+  const fallback = process.env["TELEGRAM_ADMIN_CHAT_ID"];
+  if (fallback) targets.add(String(fallback).trim());
+
   try {
-    await telegram("sendMessage", {
-      chat_id: adminChatId,
-      text: lines.join("\n"),
-    });
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const { data } = await supabaseAdmin
+      .from("bot_admins")
+      .select("telegram_chat_id")
+      .eq("active", true);
+    for (const row of data ?? []) {
+      if (row.telegram_chat_id) targets.add(String(row.telegram_chat_id));
+    }
   } catch {
-    console.error("Admin notification could not be delivered");
+    console.error("Admin list could not be loaded for notifications");
+  }
+
+  for (const chatId of targets) {
+    try {
+      await telegram("sendMessage", { chat_id: chatId, text });
+    } catch {
+      console.error("Admin notification could not be delivered");
+    }
   }
 }
 
