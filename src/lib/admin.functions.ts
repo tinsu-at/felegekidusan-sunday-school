@@ -24,14 +24,20 @@ export type AdminRegistration = {
   created_at: string;
 };
 
-/** Is the caller an admin? Also reports whether any admin exists yet. */
+/** Is the caller an admin/owner? Also reports whether any admin exists yet. */
 export const getAdminStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId,
-      _role: "admin",
-    });
+    const [{ data: isAdmin }, { data: isOwner }] = await Promise.all([
+      context.supabase.rpc("has_role", {
+        _user_id: context.userId,
+        _role: "admin",
+      }),
+      context.supabase.rpc("has_role", {
+        _user_id: context.userId,
+        _role: "owner",
+      }),
+    ]);
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
@@ -39,10 +45,14 @@ export const getAdminStatus = createServerFn({ method: "GET" })
       .from("user_roles")
       .select("id", { count: "exact", head: true })
       .eq("role", "admin");
-    return { isAdmin: Boolean(isAdmin), adminCount: count ?? 0 };
+    return {
+      isAdmin: Boolean(isAdmin) || Boolean(isOwner),
+      isOwner: Boolean(isOwner),
+      adminCount: count ?? 0,
+    };
   });
 
-/** The very first signed-in user may claim administrator access. */
+/** The very first signed-in user may claim owner + administrator access. */
 export const claimFirstAdmin = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -56,7 +66,10 @@ export const claimFirstAdmin = createServerFn({ method: "POST" })
     if ((count ?? 0) > 0) throw new Error("Forbidden");
     const { error } = await supabaseAdmin
       .from("user_roles")
-      .insert({ user_id: context.userId, role: "admin" });
+      .insert([
+        { user_id: context.userId, role: "admin" },
+        { user_id: context.userId, role: "owner" },
+      ]);
     if (error) throw new Error("Could not grant administrator access");
     return { ok: true };
   });
