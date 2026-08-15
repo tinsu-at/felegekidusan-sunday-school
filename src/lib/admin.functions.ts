@@ -150,3 +150,196 @@ export const deleteRegistration = createServerFn({ method: "POST" })
     if (error) throw new Error("Could not delete the registration");
     return { ok: true };
   });
+
+// ---------------------------------------------------------------------------
+// Owner-only settings: Telegram admins, Help & Information, CSV export
+// ---------------------------------------------------------------------------
+
+type AuthedContext = { supabase: unknown; userId: string };
+
+/** Throws unless the caller holds the owner role. */
+async function assertOwner(context: {
+  supabase: { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown }> };
+  userId: string;
+}) {
+  const { data } = await context.supabase.rpc("has_role", {
+    _user_id: context.userId,
+    _role: "owner",
+  });
+  if (!data) throw new Error("Forbidden");
+}
+
+export type BotAdmin = {
+  id: string;
+  telegram_user_id: number;
+  telegram_chat_id: number;
+  label: string;
+  role: string;
+  active: boolean;
+  created_at: string;
+};
+
+export const listBotAdmins = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("bot_admins")
+      .select("id, telegram_user_id, telegram_chat_id, label, role, active, created_at")
+      .order("created_at", { ascending: true });
+    if (error) throw new Error("Could not load the admin list");
+    return (data ?? []) as BotAdmin[];
+  });
+
+const botAdminSchema = z.object({
+  telegram_user_id: z.coerce.number().int().positive(),
+  telegram_chat_id: z.coerce.number().int().optional(),
+  label: z.string().trim().max(100).default(""),
+  role: z.enum(["owner", "admin"]).default("admin"),
+  active: z.boolean().default(true),
+});
+
+export const saveBotAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => botAdminSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const { error } = await supabaseAdmin.from("bot_admins").upsert(
+      {
+        telegram_user_id: data.telegram_user_id,
+        telegram_chat_id: data.telegram_chat_id ?? data.telegram_user_id,
+        label: data.label,
+        role: data.role,
+        active: data.active,
+      },
+      { onConflict: "telegram_user_id" },
+    );
+    if (error) throw new Error("Could not save the admin");
+    return { ok: true };
+  });
+
+export const removeBotAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({ id: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const { error } = await supabaseAdmin
+      .from("bot_admins")
+      .delete()
+      .eq("id", data.id);
+    if (error) throw new Error("Could not remove the admin");
+    return { ok: true };
+  });
+
+export type HelpRow = {
+  lang: "am" | "en";
+  title: string;
+  body: string;
+  instructions: string;
+  contacts: string;
+  announcements: string;
+  buttons: { text: string; url: string }[];
+};
+
+export const listHelpContent = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("help_content")
+      .select("lang, title, body, instructions, contacts, announcements, buttons");
+    if (error) throw new Error("Could not load the help content");
+    return (data ?? []) as HelpRow[];
+  });
+
+const helpSchema = z.object({
+  lang: z.enum(["am", "en"]),
+  title: z.string().trim().max(200),
+  body: z.string().trim().max(2000),
+  instructions: z.string().trim().max(2000),
+  contacts: z.string().trim().max(1000),
+  announcements: z.string().trim().max(2000),
+  buttons: z
+    .array(
+      z.object({
+        text: z.string().trim().min(1).max(60),
+        url: z.string().trim().url().max(300),
+      }),
+    )
+    .max(6)
+    .default([]),
+});
+
+export const saveHelpContent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => helpSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const { error } = await supabaseAdmin
+      .from("help_content")
+      .upsert({ ...data }, { onConflict: "lang" });
+    if (error) throw new Error("Could not save the help content");
+    return { ok: true };
+  });
+
+export const resetHelpContent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({ lang: z.enum(["am", "en"]) }).parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const [{ defaultHelpContent }, { supabaseAdmin }] = await Promise.all([
+      import("@/lib/help-content.server"),
+      import("@/integrations/supabase/client.server"),
+    ]);
+    const defaults = defaultHelpContent(data.lang);
+    const { error } = await supabaseAdmin
+      .from("help_content")
+      .upsert({ ...defaults }, { onConflict: "lang" });
+    if (error) throw new Error("Could not reset the help content");
+    return { ok: true, content: defaults };
+  });
+
+/** Owner-only CSV export of all registrations. */
+export const exportRegistrationsCsv = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertOwner(context);
+    const { data, error } = await context.supabase
+      .from("registrations")
+      .select(REG_COLUMNS)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error("Could not export the registrations");
+    const rows = (data ?? []) as AdminRegistration[];
+    const headers = [
+      "registration_id",
+      "full_name",
+      "christian_name",
+      "gender",
+      "birth_date_ec",
+      "mother_name",
+      "mother_phone",
+      "father_name",
+      "father_phone",
+      "status",
+      "created_at",
+    ] as const;
+    const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [
+      headers.join(","),
+      ...rows.map((r) =>
+        headers.map((h) => escape((r as Record<string, unknown>)[h])).join(","),
+      ),
+    ].join("\n");
+    return { csv, count: rows.length };
+  });
