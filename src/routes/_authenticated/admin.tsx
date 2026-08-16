@@ -284,7 +284,11 @@ function AdminPage() {
         </div>
 
         {tab === "settings" ? (
-          <AdminSettingsPanel isOwner={isOwner} />
+          <AdminSettingsPanel
+            isOwner={isOwner}
+            currentEmail={statusQuery.data?.email}
+          />
+
         ) : (
         <>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
