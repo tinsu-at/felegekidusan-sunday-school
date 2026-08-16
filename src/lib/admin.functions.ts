@@ -24,10 +24,60 @@ export type AdminRegistration = {
   created_at: string;
 };
 
+/**
+ * Accounts that always hold OWNER-level access, matched by the authenticated
+ * email address. No passwords or secrets live here — sign-in still goes
+ * through the normal auth provider.
+ */
+const OWNER_EMAILS = [
+  "sinsaetsegaye85@gmail.com",
+  "tinsaetsegaye85@gmail.com",
+] as const;
+
+/** Primary owner address shown in the dashboard. */
+export const OWNER_EMAIL = OWNER_EMAILS[0];
+
+function isOwnerEmail(email: unknown) {
+  return OWNER_EMAILS.includes(
+    String(email ?? "").trim().toLowerCase() as (typeof OWNER_EMAILS)[number],
+  );
+}
+
 /** Is the caller an admin/owner? Also reports whether any admin exists yet. */
 export const getAdminStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const email = String(context.claims['email'] ?? "").trim().toLowerCase();
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+
+    // The designated owner address is granted owner + admin automatically.
+    if (isOwnerEmail(email)) {
+      const { data: existing } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", context.userId);
+      const have = new Set((existing ?? []).map((r) => r.role));
+      const missing = (["owner", "admin"] as const).filter((r) => !have.has(r));
+      if (missing.length) {
+        await supabaseAdmin
+          .from("user_roles")
+          .insert(missing.map((role) => ({ user_id: context.userId, role })));
+      }
+      const { count } = await supabaseAdmin
+        .from("user_roles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "admin");
+      return {
+        isAdmin: true,
+        isOwner: true,
+        adminCount: count ?? 0,
+        email,
+        ownerEmail: OWNER_EMAIL,
+      };
+    }
+
     const [{ data: isAdmin }, { data: isOwner }] = await Promise.all([
       context.supabase.rpc("has_role", {
         _user_id: context.userId,
@@ -38,9 +88,6 @@ export const getAdminStatus = createServerFn({ method: "GET" })
         _role: "owner",
       }),
     ]);
-    const { supabaseAdmin } = await import(
-      "@/integrations/supabase/client.server"
-    );
     const { count } = await supabaseAdmin
       .from("user_roles")
       .select("id", { count: "exact", head: true })
@@ -49,8 +96,11 @@ export const getAdminStatus = createServerFn({ method: "GET" })
       isAdmin: Boolean(isAdmin) || Boolean(isOwner),
       isOwner: Boolean(isOwner),
       adminCount: count ?? 0,
+      email,
+      ownerEmail: OWNER_EMAIL,
     };
   });
+
 
 /** The very first signed-in user may claim owner + administrator access. */
 export const claimFirstAdmin = createServerFn({ method: "POST" })
