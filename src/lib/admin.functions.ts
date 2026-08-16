@@ -214,13 +214,16 @@ async function assertOwner(context: {
     ) => PromiseLike<{ data: unknown }>;
   };
   userId: string;
+  claims?: Record<string, unknown>;
 }) {
+  if (isOwnerEmail(context.claims?.['email'])) return;
   const { data } = await context.supabase.rpc("has_role", {
     _user_id: context.userId,
     _role: "owner",
   });
   if (!data) throw new Error("Forbidden");
 }
+
 
 export type BotAdmin = {
   id: string;
