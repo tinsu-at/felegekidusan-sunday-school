@@ -93,7 +93,7 @@ export function AdminSettingsPanel({
   currentEmail,
 }: {
   isOwner: boolean;
-  currentEmail?: string;
+  currentEmail?: string | undefined;
 }) {
   const { lang, t } = useUiLang();
   const tt = t.admin;
