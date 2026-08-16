@@ -396,3 +396,141 @@ export const exportRegistrationsCsv = createServerFn({ method: "GET" })
     ].join("\n");
     return { csv, count: rows.length };
   });
+
+// ---------------------------------------------------------------------------
+// Owner-only: dashboard accounts (who may sign in to /admin)
+// ---------------------------------------------------------------------------
+
+export type DashboardAdmin = {
+  user_id: string;
+  email: string;
+  role: "owner" | "admin";
+  isOwnerAccount: boolean;
+  created_at: string | null;
+};
+
+/** Map of user id -> email, read through the Auth Admin API. */
+async function emailIndex(supabaseAdmin: {
+  auth: { admin: { listUsers: (o: { page: number; perPage: number }) => Promise<{ data: { users: { id: string; email?: string | null }[] } }> } };
+}) {
+  const map = new Map<string, string>();
+  for (let page = 1; page <= 10; page++) {
+    const { data } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+    const users = data?.users ?? [];
+    for (const u of users) map.set(u.id, (u.email ?? "").toLowerCase());
+    if (users.length < 200) break;
+  }
+  return map;
+}
+
+export const listDashboardAdmins = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const [{ data: roles }, emails] = await Promise.all([
+      supabaseAdmin
+        .from("user_roles")
+        .select("user_id, role, created_at")
+        .order("created_at", { ascending: true }),
+      emailIndex(supabaseAdmin as never),
+    ]);
+    const byUser = new Map<string, DashboardAdmin>();
+    for (const row of roles ?? []) {
+      if (row.role !== "owner" && row.role !== "admin") continue;
+      const email = emails.get(row.user_id) ?? "";
+      const current = byUser.get(row.user_id);
+      const role = row.role === "owner" || current?.role === "owner"
+        ? "owner"
+        : "admin";
+      byUser.set(row.user_id, {
+        user_id: row.user_id,
+        email,
+        role,
+        isOwnerAccount: OWNER_EMAILS.includes(email as never),
+        created_at: current?.created_at ?? row.created_at,
+      });
+    }
+    return [...byUser.values()];
+  });
+
+/** Owner grants dashboard access to an existing or newly invited account. */
+export const addDashboardAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        email: z.string().trim().toLowerCase().email().max(200),
+        role: z.enum(["admin", "owner"]).default("admin"),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const emails = await emailIndex(supabaseAdmin as never);
+    let userId: string | undefined;
+    for (const [id, mail] of emails) if (mail === data.email) userId = id;
+
+    let invited = false;
+    if (!userId) {
+      const { data: created, error } =
+        await supabaseAdmin.auth.admin.inviteUserByEmail(data.email);
+      if (error || !created?.user) {
+        throw new Error(
+          "Could not invite that address. Ask the person to sign up at /auth first, then add them again.",
+        );
+      }
+      userId = created.user.id;
+      invited = true;
+    }
+
+    const roles: ("admin" | "owner")[] =
+      data.role === "owner" ? ["admin", "owner"] : ["admin"];
+    const { data: existing } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId);
+    const have = new Set((existing ?? []).map((r) => r.role));
+    const missing = roles.filter((r) => !have.has(r));
+    if (missing.length) {
+      const { error } = await supabaseAdmin
+        .from("user_roles")
+        .insert(missing.map((role) => ({ user_id: userId!, role })));
+      if (error) throw new Error("Could not grant access");
+    }
+    return { ok: true, invited };
+  });
+
+export const removeDashboardAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({ user_id: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    if (data.user_id === context.userId) {
+      throw new Error("You cannot remove your own access");
+    }
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const emails = await emailIndex(supabaseAdmin as never);
+    const email = emails.get(data.user_id) ?? "";
+    if (OWNER_EMAILS.includes(email as never)) {
+      throw new Error("The owner account cannot be removed");
+    }
+    const { error } = await supabaseAdmin
+      .from("user_roles")
+      .delete()
+      .eq("user_id", data.user_id);
+    if (error) throw new Error("Could not remove access");
+    return { ok: true };
+  });
