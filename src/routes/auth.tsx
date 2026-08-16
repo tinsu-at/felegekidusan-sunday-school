@@ -33,7 +33,7 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const { t } = useUiLang();
+  const { lang, t } = useUiLang();
   const a = t.auth;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -135,6 +135,36 @@ function AuthPage() {
         >
           {mode === "signin" ? a.toSignUp : a.toSignIn}
         </button>
+
+        <button
+          type="button"
+          onClick={async () => {
+            if (!email) {
+              toast.error(
+                lang === "en"
+                  ? "Enter your email first"
+                  : "እባክዎ መጀመሪያ ኢሜይልዎን ያስገቡ",
+              );
+              return;
+            }
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+              redirectTo: `${window.location.origin}/reset-password`,
+            });
+            if (error) {
+              toast.error(error.message);
+              return;
+            }
+            toast.success(
+              lang === "en"
+                ? "Password reset link sent — check your email"
+                : "የይለፍ ቃል ማደስ አገናኝ ተልኳል — ኢሜይልዎን ይመልከቱ",
+            );
+          }}
+          className="w-full text-center text-xs text-muted-foreground underline"
+        >
+          {lang === "en" ? "Forgot password?" : "የይለፍ ቃል ረስተዋል?"}
+        </button>
+
       </div>
     </main>
   );

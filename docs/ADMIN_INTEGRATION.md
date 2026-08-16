@@ -59,3 +59,19 @@ no redeploy.
    `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ADMIN_CHAT_ID`,
    `SCHOOL_NOTIFICATION_EMAIL`, `SUPABASE_SERVICE_ROLE_KEY`. Never reference
    them from browser code.
+
+## Owner account
+
+The owner is recognised by the authenticated email address
+(`sinsaetsegaye85@gmail.com`, plus `tinsaetsegaye85@gmail.com` as the
+alternate spelling of the same person). On first sign-in the `owner` and
+`admin` roles are granted to that account automatically — no passwords or
+credentials live in code. The owner account cannot be removed from the
+dashboard.
+
+Owner-only server functions: `listDashboardAdmins`, `addDashboardAdmin`,
+`removeDashboardAdmin`, `saveBotAdmin`, `removeBotAdmin`, `saveHelpContent`,
+`resetHelpContent`, `exportRegistrationsCsv`.
+
+Password recovery uses the auth provider's reset email; the new-password
+screen lives at `/reset-password`.

@@ -22,12 +22,16 @@ import {
 } from "@/components/ui/select";
 import { useUiLang } from "@/lib/ui-i18n";
 import {
+  addDashboardAdmin,
   listBotAdmins,
+  listDashboardAdmins,
   listHelpContent,
   removeBotAdmin,
+  removeDashboardAdmin,
   resetHelpContent,
   saveBotAdmin,
   saveHelpContent,
+  OWNER_EMAIL,
   type HelpRow,
 } from "@/lib/admin.functions";
 
@@ -43,9 +47,57 @@ const emptyHelp = (lang: "am" | "en"): HelpDraft => ({
   buttons: [],
 });
 
-export function AdminSettingsPanel({ isOwner }: { isOwner: boolean }) {
-  const { t } = useUiLang();
+const OWNER_COPY = {
+  am: {
+    section: "⚙️ የባለቤት ቅንብሮች",
+    owner: "ባለቤት (Owner)",
+    accounts: "የዳሽቦርድ አስተዳዳሪዎች",
+    accountsDesc:
+      "የመግቢያ ፈቃድ ያላቸው መለያዎች። ባለቤት ብቻ መጨመር/ማስወገድ ይችላል።",
+    email: "ኢሜይል",
+    role: "ሚና",
+    admin: "አስተዳዳሪ",
+    ownerRole: "ባለቤት",
+    add: "አስተዳዳሪ ጨምር",
+    remove: "አስወግድ",
+    added: "ተጨምሯል",
+    invited: "ግብዣ ተልኳል",
+    removed: "ተወግዷል",
+    failed: "አልተሳካም",
+    empty: "እስካሁን አስተዳዳሪ አልተጨመረም",
+    protected: "የባለቤት መለያ",
+  },
+  en: {
+    section: "⚙️ Owner Settings",
+    owner: "Owner",
+    accounts: "Dashboard administrators",
+    accountsDesc:
+      "Accounts allowed to sign in to /admin. Only the owner can add or remove them.",
+    email: "Email",
+    role: "Role",
+    admin: "Admin",
+    ownerRole: "Owner",
+    add: "Add administrator",
+    remove: "Remove",
+    added: "Access granted",
+    invited: "Invitation sent",
+    removed: "Access removed",
+    failed: "Something went wrong",
+    empty: "No administrators yet",
+    protected: "Owner account",
+  },
+} as const;
+
+export function AdminSettingsPanel({
+  isOwner,
+  currentEmail,
+}: {
+  isOwner: boolean;
+  currentEmail?: string | undefined;
+}) {
+  const { lang, t } = useUiLang();
   const tt = t.admin;
+  const o = OWNER_COPY[lang === "en" ? "en" : "am"];
   const queryClient = useQueryClient();
 
   const fetchAdmins = useServerFn(listBotAdmins);
@@ -54,14 +106,24 @@ export function AdminSettingsPanel({ isOwner }: { isOwner: boolean }) {
   const doRemoveAdmin = useServerFn(removeBotAdmin);
   const doSaveHelp = useServerFn(saveHelpContent);
   const doResetHelp = useServerFn(resetHelpContent);
+  const fetchAccounts = useServerFn(listDashboardAdmins);
+  const doAddAccount = useServerFn(addDashboardAdmin);
+  const doRemoveAccount = useServerFn(removeDashboardAdmin);
 
   const adminsQuery = useQuery({
     queryKey: ["bot-admins"],
     queryFn: () => fetchAdmins({}),
+    enabled: isOwner,
   });
   const helpQuery = useQuery({
     queryKey: ["help-content"],
     queryFn: () => fetchHelp({}),
+    enabled: isOwner,
+  });
+  const accountsQuery = useQuery({
+    queryKey: ["dashboard-admins"],
+    queryFn: () => fetchAccounts({}),
+    enabled: isOwner,
   });
 
   const [helpLang, setHelpLang] = useState<"am" | "en">("am");
@@ -94,6 +156,129 @@ export function AdminSettingsPanel({ isOwner }: { isOwner: boolean }) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      {/* Owner settings: dashboard accounts */}
+      <section className="space-y-4 rounded-2xl border border-accent/40 bg-card p-6 shadow-sm lg:col-span-2">
+        <div>
+          <h2 className="text-lg font-semibold text-card-foreground">
+            {o.section}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {o.owner}:{" "}
+            <span className="font-medium text-foreground">
+              {currentEmail && currentEmail !== OWNER_EMAIL
+                ? currentEmail
+                : OWNER_EMAIL}
+            </span>
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold text-card-foreground">
+              {o.accounts}
+            </h3>
+            <p className="text-xs text-muted-foreground">{o.accountsDesc}</p>
+          </div>
+
+          <form
+            className="grid gap-3 sm:grid-cols-[1fr_auto_auto]"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const form = e.currentTarget;
+              const fd = new FormData(form);
+              try {
+                const res = await doAddAccount({
+                  data: {
+                    email: String(fd.get("account_email") ?? ""),
+                    role: String(fd.get("account_role") ?? "admin") as "admin",
+                  },
+                });
+                toast.success(res.invited ? o.invited : o.added);
+                form.reset();
+                await queryClient.invalidateQueries({
+                  queryKey: ["dashboard-admins"],
+                });
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : o.failed);
+              }
+            }}
+          >
+            <div className="space-y-1">
+              <Label htmlFor="account_email">{o.email}</Label>
+              <Input
+                id="account_email"
+                name="account_email"
+                type="email"
+                required
+                placeholder="name@example.com"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="account_role">{o.role}</Label>
+              <select
+                id="account_role"
+                name="account_role"
+                defaultValue="admin"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="admin">{o.admin}</option>
+                <option value="owner">{o.ownerRole}</option>
+              </select>
+            </div>
+            <Button type="submit" className="self-end">
+              {o.add}
+            </Button>
+          </form>
+
+          <ul className="space-y-2">
+            {(accountsQuery.data ?? []).length === 0 ? (
+              <li className="text-sm text-muted-foreground">{o.empty}</li>
+            ) : (
+              (accountsQuery.data ?? []).map((a) => (
+                <li
+                  key={a.user_id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-background px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">
+                      {a.email || a.user_id}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {a.role === "owner" ? o.ownerRole : o.admin}
+                      {a.isOwnerAccount ? ` · ${o.protected}` : ""}
+                    </span>
+                  </span>
+                  {a.isOwnerAccount ? null : (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={async () => {
+                        try {
+                          await doRemoveAccount({
+                            data: { user_id: a.user_id },
+                          });
+                          toast.success(o.removed);
+                          await queryClient.invalidateQueries({
+                            queryKey: ["dashboard-admins"],
+                          });
+                        } catch (err) {
+                          toast.error(
+                            err instanceof Error ? err.message : o.failed,
+                          );
+                        }
+                      }}
+                    >
+                      {o.remove}
+                    </Button>
+                  )}
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      </section>
+
+
       {/* Telegram admins */}
       <section className="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div>
