@@ -33,7 +33,7 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const { t } = useUiLang();
+  const { lang, t } = useUiLang();
   const a = t.auth;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
