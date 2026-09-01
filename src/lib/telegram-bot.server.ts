@@ -1,12 +1,27 @@
 /**
  * Server-only Telegram bot logic for ሰንበት ት/ቤት registration.
  * Bilingual (አማርኛ / English); language preference is stored per Telegram user id.
+ * The question flow is driven by the latest PUBLISHED question configuration in
+ * the database, so the owner can change questions without a redeploy.
  * The bot token is read from process.env inside functions and is never
  * returned, logged, stored in the database, or exposed to the client.
  */
 
 import { helpMessage } from "@/lib/help-content.server";
+import {
+  currentEthiopianYear,
+  isCoreField,
+  label as questionLabel,
+  optionLabel,
+  questionError,
+  validateAnswer,
+  validateEthiopianDate,
+  type QuestionConfig,
+} from "@/lib/question-config";
+import { publishedQuestions } from "@/lib/question-config.server";
 import { T, asLang, type Lang } from "@/lib/telegram-i18n";
+
+export { validateEthiopianDate };
 
 type TelegramUpdate = {
   update_id?: number;
@@ -23,20 +38,26 @@ type TelegramUpdate = {
   };
 };
 
-const STEPS = [
-  "full_name",
-  "christian_name",
-  "gender",
-  "birth_date_ec",
-  "mother_name",
-  "mother_phone",
-  "father_name",
-  "father_phone",
-  "confirm",
-] as const;
-
-type Step = (typeof STEPS)[number];
-type FieldStep = Exclude<Step, "confirm">;
+/** Used only when nothing has been published yet (should not happen). */
+const FALLBACK_QUESTIONS: QuestionConfig[] = [
+  {
+    field_key: "full_name",
+    position: 1,
+    label_am: T.am.questions.full_name,
+    label_en: T.en.questions.full_name,
+    input_type: "text",
+    required: true,
+    amharic_only: true,
+    min_words: null,
+    max_words: null,
+    exact_words: 3,
+    error_am: T.am.errName,
+    error_en: T.en.errName,
+    options: [],
+    is_core: true,
+    active: true,
+  },
+];
 
 // ---------- Keyboards ----------
 
@@ -66,11 +87,10 @@ const helpKeyboard = (
   ],
 });
 
-const genderKeyboard = (lang: Lang) => ({
-  inline_keyboard: [
-    [{ text: T[lang].btnMale, callback_data: "gender_male" }],
-    [{ text: T[lang].btnFemale, callback_data: "gender_female" }],
-  ],
+const optionsKeyboard = (q: QuestionConfig, lang: Lang) => ({
+  inline_keyboard: q.options.map((o, i) => [
+    { text: optionLabel(o, lang), callback_data: `opt_${i}` },
+  ]),
 });
 
 const confirmKeyboard = (lang: Lang) => ({
@@ -145,116 +165,39 @@ async function notifyAdmins(lines: string[]) {
   }
 }
 
-// ---------- Validation ----------
-
-/** Converts Ethiopic/Arabic-Indic digits to ASCII and trims. */
-function normalizeDigits(input: string): string {
-  const ethiopic: Record<string, string> = {
-    "፩": "1",
-    "፪": "2",
-    "፫": "3",
-    "፬": "4",
-    "፭": "5",
-    "፮": "6",
-    "፯": "7",
-    "፰": "8",
-    "፱": "9",
-  };
-  return input
-    .split("")
-    .map((c) => ethiopic[c] ?? c)
-    .join("")
-    .trim();
-}
-
-function currentEthiopianYear(): number {
-  const now = new Date();
-  const gYear = now.getUTCFullYear();
-  const month = now.getUTCMonth() + 1;
-  const day = now.getUTCDate();
-  // Ethiopian new year falls on Sep 11 (Sep 12 in years before a Gregorian leap year).
-  const afterNewYear = month > 9 || (month === 9 && day >= 11);
-  return afterNewYear ? gYear - 7 : gYear - 8;
-}
-
-/** Only Ethiopic letters, separated by single spaces. */
-const ETHIOPIC_WORD = /^[\u1200-\u137F]+$/;
-const LATIN_WORD = /^[A-Za-z][A-Za-z'’.-]*$/;
-
-function validateAmharicName(
-  value: string,
-  exactWords: number | null,
-  lang: Lang,
-): string | null {
-  const name = value.trim().replace(/\s+/g, " ");
-  if (!name) return null;
-  const words = name.split(" ");
-  if (exactWords !== null && words.length !== exactWords) return null;
-  if (exactWords === null && (words.length < 1 || words.length > 3)) return null;
-  const ok = (w: string) =>
-    ETHIOPIC_WORD.test(w) || (lang === "en" && LATIN_WORD.test(w));
-  if (!words.every(ok)) return null;
-  if (name.length > 100) return null;
-  return name;
-}
-
-function isEthiopianLeapYear(year: number): boolean {
-  return year % 4 === 3;
-}
-
-export function validateEthiopianDate(
-  value: string,
-): { day: number; month: number; year: number; formatted: string } | null {
-  const raw = normalizeDigits(value).replace(/[.\-]/g, "/").replace(/\s/g, "");
-  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
-  if (!match) return null;
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  if (month < 1 || month > 13) return null;
-  const maxDay = month === 13 ? (isEthiopianLeapYear(year) ? 6 : 5) : 30;
-  if (day < 1 || day > maxDay) return null;
-  if (year < 1950 || year > currentEthiopianYear()) return null;
-  const formatted = `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
-  return { day, month, year, formatted };
-}
-
-function validatePhone(value: string): string | null {
-  const raw = normalizeDigits(value).replace(/[\s\-()]/g, "");
-  let match = /^(?:\+251|251)([79]\d{8})$/.exec(raw);
-  if (match) return `+251${match[1]}`;
-  match = /^0([79]\d{8})$/.exec(raw);
-  if (match) return `+251${match[1]}`;
-  return null;
-}
-
 // ---------- Session helpers ----------
 
-type Answers = Partial<Record<FieldStep, string>> & { reg_id?: string };
+type Answers = Record<string, string | undefined> & { reg_id?: string };
 
-/** Stored gender values stay Amharic; only the display label is translated. */
-function genderLabel(stored: string | undefined, lang: Lang): string {
-  if (stored === "ወንድ") return T[lang].gender.male;
-  if (stored === "ሴት") return T[lang].gender.female;
-  return stored ?? "";
+/** Short one-line label for the confirmation summary. */
+function shortLabel(q: QuestionConfig, lang: Lang): string {
+  const first = questionLabel(q, lang).split("\n")[0] ?? q.field_key;
+  return first.replace(/^[\d\u0030-\u0039\uFE0F\u20E3\s.]+/u, "").trim() || q.field_key;
 }
 
-function summary(a: Answers, lang: Lang): string {
+function displayValue(q: QuestionConfig, value: string | undefined, lang: Lang) {
+  if (!value) return "-";
+  if (q.input_type === "options") {
+    const hit = q.options.find((o) => o.value === value);
+    return hit ? optionLabel(hit, lang) : value;
+  }
+  return value;
+}
+
+function summary(
+  questions: QuestionConfig[],
+  a: Answers,
+  lang: Lang,
+): string {
   const t = T[lang];
-  const L = t.labels;
   return [
     t.summaryTitle,
     "",
-    `${L.regId}: ${a.reg_id}`,
+    `${t.labels.regId}: ${a.reg_id ?? "-"}`,
     "",
-    `${L.fullName}: ${a.full_name}`,
-    `${L.christianName}: ${a.christian_name}`,
-    `${L.gender}: ${genderLabel(a.gender, lang)}`,
-    `${L.birthDate}: ${a.birth_date_ec}`,
-    `${L.motherName}: ${a.mother_name}`,
-    `${L.motherPhone}: ${a.mother_phone}`,
-    `${L.fatherName}: ${a.father_name}`,
-    `${L.fatherPhone}: ${a.father_phone}`,
+    ...questions.map(
+      (q) => `${shortLabel(q, lang)}: ${displayValue(q, a[q.field_key], lang)}`,
+    ),
     "",
     t.summaryQuestion,
   ].join("\n");
@@ -285,7 +228,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     await telegram("answerCallbackQuery", { callback_query_id: cb.id });
   }
 
-  const [{ data: session }, { data: pref }] = await Promise.all([
+  const [{ data: session }, { data: pref }, published] = await Promise.all([
     supabaseAdmin
       .from("registration_sessions")
       .select("step, answers")
@@ -296,12 +239,17 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       .select("lang")
       .eq("telegram_user_id", userId)
       .maybeSingle(),
+    publishedQuestions(),
   ]);
+
+  const questions = published.length ? published : FALLBACK_QUESTIONS;
+  const findQuestion = (key: string) =>
+    questions.find((q) => q.field_key === key);
 
   let lang: Lang = asLang(pref?.lang);
   const knownLanguage = !!pref;
   const answers: Answers = (session?.answers as Answers | null) ?? {};
-  const step = (session?.step as Step | "idle" | undefined) ?? "idle";
+  const step = (session?.step as string | undefined) ?? "idle";
 
   const saveLanguage = async (next: Lang) => {
     lang = next;
@@ -313,7 +261,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       );
   };
 
-  const saveSession = async (nextStep: Step | "idle", nextAnswers: Answers) => {
+  const saveSession = async (nextStep: string, nextAnswers: Answers) => {
     await supabaseAdmin.from("registration_sessions").upsert(
       {
         telegram_user_id: userId,
@@ -333,6 +281,14 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       .eq("telegram_user_id", userId);
   };
 
+  const askQuestion = async (q: QuestionConfig) => {
+    if (q.input_type === "options" && q.options.length) {
+      await sendMessage(chatId, questionLabel(q, lang), optionsKeyboard(q, lang));
+    } else {
+      await sendMessage(chatId, questionLabel(q, lang));
+    }
+  };
+
   /** Reserves the FKN id, saves the session and sends the summary. */
   const goToConfirm = async (nextAnswers: Answers) => {
     let regId = nextAnswers.reg_id;
@@ -342,20 +298,19 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     }
     const withId: Answers = { ...nextAnswers, ...(regId ? { reg_id: regId } : {}) };
     await saveSession("confirm", withId);
-    await sendMessage(chatId, summary(withId, lang), confirmKeyboard(lang));
+    await sendMessage(chatId, summary(questions, withId, lang), confirmKeyboard(lang));
   };
 
-  const askNext = async (nextStep: Step, nextAnswers: Answers) => {
-    if (nextStep === "confirm") {
+  /** Moves to the question after `currentKey` (or the summary when done). */
+  const advance = async (currentKey: string, nextAnswers: Answers) => {
+    const index = questions.findIndex((q) => q.field_key === currentKey);
+    const next = questions[index + 1];
+    if (!next) {
       await goToConfirm(nextAnswers);
       return;
     }
-    await saveSession(nextStep, nextAnswers);
-    if (nextStep === "gender") {
-      await sendMessage(chatId, T[lang].questions.gender, genderKeyboard(lang));
-    } else {
-      await sendMessage(chatId, T[lang].questions[nextStep]);
-    }
+    await saveSession(next.field_key, nextAnswers);
+    await askQuestion(next);
   };
 
   // --- Language selection ---
@@ -373,8 +328,13 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
 
   // --- Button presses ---
   if (cb?.data === "start_reg") {
-    await saveSession("full_name", {});
-    await sendMessage(chatId, T[lang].questions.full_name);
+    const first = questions[0];
+    if (!first) {
+      await sendMessage(chatId, T[lang].saveFailed);
+      return;
+    }
+    await saveSession(first.field_key, {});
+    await askQuestion(first);
     return;
   }
 
@@ -390,13 +350,28 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     return;
   }
 
-  if (cb?.data === "gender_male" || cb?.data === "gender_female") {
-    if (step !== "gender") {
+  // Option buttons (gender and any owner-created choice question).
+  // `gender_male` / `gender_female` keep older in-flight sessions working.
+  if (cb?.data?.startsWith("opt_") || cb?.data?.startsWith("gender_")) {
+    const current = findQuestion(step);
+    if (!current || current.input_type !== "options") {
       await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
       return;
     }
-    const gender = cb.data === "gender_male" ? "ወንድ" : "ሴት";
-    await askNext("birth_date_ec", { ...answers, gender });
+    const index = cb.data.startsWith("opt_")
+      ? Number(cb.data.slice(4))
+      : cb.data === "gender_male"
+        ? 0
+        : 1;
+    const option = current.options[index];
+    if (!option) {
+      await askQuestion(current);
+      return;
+    }
+    await advance(current.field_key, {
+      ...answers,
+      [current.field_key]: option.value,
+    });
     return;
   }
 
@@ -412,7 +387,19 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
       return;
     }
-    const date = validateEthiopianDate(answers.birth_date_ec ?? "");
+
+    // Column-backed answers go to their columns; owner-added questions are
+    // stored in extra_answers so existing records/columns never change.
+    const extras: Record<string, string> = {};
+    for (const q of questions) {
+      const value = answers[q.field_key];
+      if (!isCoreField(q.field_key) && value) extras[q.field_key] = value;
+    }
+
+    const rawDate = answers["birth_date_ec"] ?? "";
+    const date = validateEthiopianDate(rawDate);
+    const yearOnly = Number(String(rawDate).replace(/\D/g, "")) || 0;
+
     const { data: inserted, error } = await supabaseAdmin
       .from("registrations")
       .insert({
@@ -420,17 +407,18 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
         telegram_user_id: userId,
         telegram_chat_id: chatId,
         telegram_username: username,
-        full_name: answers.full_name!,
-        christian_name: answers.christian_name!,
-        gender: answers.gender!,
-        birth_date_ec: date?.formatted ?? answers.birth_date_ec!,
+        full_name: answers["full_name"] ?? "-",
+        christian_name: answers["christian_name"] ?? "-",
+        gender: answers["gender"] ?? "-",
+        birth_date_ec: date?.formatted ?? rawDate,
         birth_day_ec: date?.day ?? null,
         birth_month_ec: date?.month ?? null,
-        birth_year_ec: date?.year ?? 0,
-        mother_name: answers.mother_name!,
-        mother_phone: answers.mother_phone!,
-        father_name: answers.father_name!,
-        father_phone: answers.father_phone!,
+        birth_year_ec: date?.year ?? (yearOnly >= 1900 ? yearOnly : 0),
+        mother_name: answers["mother_name"] ?? "-",
+        mother_phone: answers["mother_phone"] ?? "-",
+        father_name: answers["father_name"] ?? "-",
+        father_phone: answers["father_phone"] ?? "-",
+        extra_answers: extras,
         status: "pending",
       })
       .select("registration_id, created_at")
@@ -453,10 +441,9 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       "🆕 አዲስ ምዝገባ / New registration",
       "",
       `🆔 ${inserted.registration_id}`,
-      `👤 ${answers.full_name}`,
-      `✝️ ${answers.christian_name}`,
-      `⚥ ${answers.gender}`,
-      `🎂 ${date?.formatted ?? answers.birth_date_ec}`,
+      ...questions.map(
+        (q) => `${shortLabel(q, "am")}: ${displayValue(q, answers[q.field_key], "am")}`,
+      ),
     ]);
 
     // 3) Email confirmation to the school inbox (skipped until email sending is configured).
@@ -466,14 +453,14 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       );
       await sendRegistrationEmail({
         registrationId: inserted.registration_id,
-        fullName: answers.full_name!,
-        christianName: answers.christian_name!,
-        gender: answers.gender!,
-        birthDateEc: date?.formatted ?? answers.birth_date_ec!,
-        motherName: answers.mother_name!,
-        motherPhone: answers.mother_phone!,
-        fatherName: answers.father_name!,
-        fatherPhone: answers.father_phone!,
+        fullName: answers["full_name"] ?? "-",
+        christianName: answers["christian_name"] ?? "-",
+        gender: answers["gender"] ?? "-",
+        birthDateEc: date?.formatted ?? rawDate,
+        motherName: answers["mother_name"] ?? "-",
+        motherPhone: answers["mother_phone"] ?? "-",
+        fatherName: answers["father_name"] ?? "-",
+        fatherPhone: answers["father_phone"] ?? "-",
         createdAt: inserted.created_at,
       });
     } catch {
@@ -526,51 +513,32 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     return;
   }
 
-  if (step === "idle" || !STEPS.includes(step as Step)) {
+  if (step === "confirm") {
+    await sendMessage(chatId, summary(questions, answers, lang), confirmKeyboard(lang));
+    return;
+  }
+
+  const current = findQuestion(step);
+  if (!current) {
     await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
     return;
   }
 
-  if (step === "confirm") {
-    await sendMessage(chatId, summary(answers, lang), confirmKeyboard(lang));
+  if (current.input_type === "options") {
+    await askQuestion(current);
     return;
   }
 
-  if (step === "gender") {
-    await sendMessage(chatId, T[lang].questions.gender, genderKeyboard(lang));
+  // Optional questions may be skipped.
+  const skipped =
+    !current.required && /^(-|\/skip|skip|ዝለል)$/i.test(text.trim());
+  const value = skipped ? "" : validateAnswer(current, text, lang);
+  if (value === null) {
+    await sendMessage(chatId, questionError(current, lang));
     return;
   }
 
-  // Validate the answer for the current question.
-  let value: string | null = null;
-  if (step === "birth_date_ec") {
-    const date = validateEthiopianDate(text);
-    if (!date) {
-      await sendMessage(chatId, T[lang].errDate(currentEthiopianYear()));
-      return;
-    }
-    value = date.formatted;
-  } else if (step === "mother_phone" || step === "father_phone") {
-    value = validatePhone(text);
-    if (value === null) {
-      await sendMessage(chatId, T[lang].errPhone);
-      return;
-    }
-  } else if (step === "christian_name") {
-    value = validateAmharicName(text, null, lang);
-    if (value === null) {
-      await sendMessage(chatId, T[lang].errChristianName);
-      return;
-    }
-  } else {
-    value = validateAmharicName(text, 3, lang);
-    if (value === null) {
-      await sendMessage(chatId, T[lang].errName);
-      return;
-    }
-  }
-
-  const nextAnswers: Answers = { ...answers, [step]: value };
-  const nextStep = STEPS[STEPS.indexOf(step) + 1] as Step;
-  await askNext(nextStep, nextAnswers);
+  await advance(current.field_key, { ...answers, [current.field_key]: value });
 }
+
+export { currentEthiopianYear };

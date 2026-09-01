@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -101,6 +101,96 @@ export type Database = {
         }
         Relationships: []
       }
+      registration_question_versions: {
+        Row: {
+          created_at: string
+          id: string
+          published_by: string | null
+          questions: Json
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          published_by?: string | null
+          questions?: Json
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          published_by?: string | null
+          questions?: Json
+          updated_at?: string
+          version?: number
+        }
+        Relationships: []
+      }
+      registration_questions: {
+        Row: {
+          active: boolean
+          amharic_only: boolean
+          created_at: string
+          error_am: string
+          error_en: string
+          exact_words: number | null
+          field_key: string
+          id: string
+          input_type: string
+          is_core: boolean
+          label_am: string
+          label_en: string
+          max_words: number | null
+          min_words: number | null
+          options: Json
+          position: number
+          required: boolean
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          amharic_only?: boolean
+          created_at?: string
+          error_am?: string
+          error_en?: string
+          exact_words?: number | null
+          field_key: string
+          id?: string
+          input_type?: string
+          is_core?: boolean
+          label_am?: string
+          label_en?: string
+          max_words?: number | null
+          min_words?: number | null
+          options?: Json
+          position?: number
+          required?: boolean
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          amharic_only?: boolean
+          created_at?: string
+          error_am?: string
+          error_en?: string
+          exact_words?: number | null
+          field_key?: string
+          id?: string
+          input_type?: string
+          is_core?: boolean
+          label_am?: string
+          label_en?: string
+          max_words?: number | null
+          min_words?: number | null
+          options?: Json
+          position?: number
+          required?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       registration_sessions: {
         Row: {
           answers: Json
@@ -139,6 +229,7 @@ export type Database = {
           birth_year_ec: number
           christian_name: string
           created_at: string
+          extra_answers: Json
           father_name: string
           father_phone: string
           full_name: string
@@ -160,6 +251,7 @@ export type Database = {
           birth_year_ec: number
           christian_name: string
           created_at?: string
+          extra_answers?: Json
           father_name: string
           father_phone: string
           full_name: string
@@ -181,6 +273,7 @@ export type Database = {
           birth_year_ec?: number
           christian_name?: string
           created_at?: string
+          extra_answers?: Json
           father_name?: string
           father_phone?: string
           full_name?: string
