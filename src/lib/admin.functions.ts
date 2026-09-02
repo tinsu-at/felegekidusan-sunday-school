@@ -30,12 +30,13 @@ export type AdminRegistration = {
  * through the normal auth provider.
  */
 const OWNER_EMAILS = [
-  "sinsaetsegaye85@gmail.com",
   "tinsaetsegaye85@gmail.com",
+  "sinsaetsegaye85@gmail.com",
 ] as const;
 
 /** Primary owner address shown in the dashboard. */
 export const OWNER_EMAIL = OWNER_EMAILS[0];
+
 
 function isOwnerEmail(email: unknown) {
   return OWNER_EMAILS.includes(
