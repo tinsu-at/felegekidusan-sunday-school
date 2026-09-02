@@ -31,7 +31,6 @@ export type AdminRegistration = {
  */
 const OWNER_EMAILS = [
   "tinsaetsegaye85@gmail.com",
-  "sinsaetsegaye85@gmail.com",
 ] as const;
 
 /** Primary owner address shown in the dashboard. */
