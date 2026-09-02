@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AdminSettingsPanel } from "@/components/admin/settings-panel";
+import { QuestionsPanel } from "@/components/admin/questions-panel";
 import { LanguageToggle } from "@/components/language-toggle";
 import logoAsset from "@/assets/sunday-school-logo.jpg.asset.json";
 import { supabase } from "@/integrations/supabase/client";
@@ -284,11 +285,13 @@ function AdminPage() {
         </div>
 
         {tab === "settings" ? (
-          <AdminSettingsPanel
-            isOwner={isOwner}
-            currentEmail={statusQuery.data?.email}
-          />
-
+          <>
+            <AdminSettingsPanel
+              isOwner={isOwner}
+              currentEmail={statusQuery.data?.email}
+            />
+            {isOwner ? <QuestionsPanel isOwner={isOwner} /> : null}
+          </>
         ) : (
         <>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
