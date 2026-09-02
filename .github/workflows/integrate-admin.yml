@@ -1,0 +1,62 @@
+name: Integrate admin question editor
+
+on:
+  push:
+    branches: [fix/edit-questions-ci-owner]
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor == 'tinsu-at' || github.actor == 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Integrate QuestionsPanel and normalize owner email
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/components/admin/settings-panel.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          import_line = 'import { QuestionsPanel } from "@/components/admin/questions-panel";\n'
+          anchor = 'import { useUiLang } from "@/lib/ui-i18n";\n'
+          if import_line not in text:
+              if anchor not in text:
+                  raise SystemExit('Could not find settings-panel import anchor')
+              text = text.replace(anchor, anchor + import_line, 1)
+
+          grid = '    <div className="grid gap-6 lg:grid-cols-2">\n'
+          mount = '      <QuestionsPanel isOwner={isOwner} />\n'
+          if mount not in text:
+              if grid not in text:
+                  raise SystemExit('Could not find settings-panel grid anchor')
+              text = text.replace(grid, grid + mount, 1)
+
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('src/lib/admin.functions.ts')
+          text = path.read_text(encoding='utf-8')
+          old = '''const OWNER_EMAILS = [\n  "tinsaetsegaye85@gmail.com",\n  "sinsaetsegaye85@gmail.com",\n] as const;'''
+          new = '''const OWNER_EMAILS = [\n  "tinsaetsegaye85@gmail.com",\n] as const;'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+      
+      - name: Commit integration changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/admin/settings-panel.tsx src/lib/admin.functions.ts
+          if git diff --cached --quiet; then
+            echo "No integration changes needed"
+            exit 0
+          fi
+          git commit -m "Integrate owner question editor"
+          git push
