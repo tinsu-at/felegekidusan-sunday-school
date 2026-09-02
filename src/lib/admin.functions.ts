@@ -30,12 +30,13 @@ export type AdminRegistration = {
  * through the normal auth provider.
  */
 const OWNER_EMAILS = [
-  "sinsaetsegaye85@gmail.com",
   "tinsaetsegaye85@gmail.com",
+  "sinsaetsegaye85@gmail.com",
 ] as const;
 
 /** Primary owner address shown in the dashboard. */
 export const OWNER_EMAIL = OWNER_EMAILS[0];
+
 
 function isOwnerEmail(email: unknown) {
   return OWNER_EMAILS.includes(
@@ -536,4 +537,180 @@ export const removeDashboardAdmin = createServerFn({ method: "POST" })
       .eq("user_id", data.user_id);
     if (error) throw new Error("Could not remove access");
     return { ok: true };
+  });
+
+// ---------------------------------------------------------------------------
+// Owner-only: registration question configuration (draft + publish)
+// ---------------------------------------------------------------------------
+
+const QUESTION_COLUMNS =
+  "id, field_key, position, label_am, label_en, input_type, required, amharic_only, min_words, max_words, exact_words, error_am, error_en, options, is_core, active";
+
+const optionSchema = z.object({
+  value: z.string().trim().min(1).max(60),
+  label_am: z.string().trim().max(60).default(""),
+  label_en: z.string().trim().max(60).default(""),
+});
+
+const questionSchema = z.object({
+  id: z.string().uuid().optional(),
+  field_key: z
+    .string()
+    .trim()
+    .min(2)
+    .max(60)
+    .regex(/^[a-z][a-z0-9_]*$/, "Use lowercase letters, numbers and _"),
+  position: z.coerce.number().int().min(1).max(100),
+  label_am: z.string().max(1000).default(""),
+  label_en: z.string().max(1000).default(""),
+  input_type: z.enum([
+    "text",
+    "phone",
+    "ethiopian_date",
+    "ethiopian_year",
+    "options",
+  ]),
+  required: z.boolean().default(true),
+  amharic_only: z.boolean().default(false),
+  min_words: z.coerce.number().int().min(1).max(20).nullable().default(null),
+  max_words: z.coerce.number().int().min(1).max(20).nullable().default(null),
+  exact_words: z.coerce.number().int().min(1).max(20).nullable().default(null),
+  error_am: z.string().max(500).default(""),
+  error_en: z.string().max(500).default(""),
+  options: z.array(optionSchema).max(12).default([]),
+  active: z.boolean().default(true),
+});
+
+/** Draft questions + info about the published version. */
+export const listQuestionConfig = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const [{ data: draft, error }, { data: version }] = await Promise.all([
+      context.supabase
+        .from("registration_questions")
+        .select(QUESTION_COLUMNS)
+        .order("position", { ascending: true }),
+      context.supabase
+        .from("registration_question_versions")
+        .select("version, questions, created_at")
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (error) throw new Error("Could not load the questions");
+    return {
+      draft: draft ?? [],
+      published: version ?? null,
+    };
+  });
+
+export const saveQuestion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => questionSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const row = {
+      field_key: data.field_key,
+      position: data.position,
+      label_am: data.label_am,
+      label_en: data.label_en,
+      input_type: data.input_type,
+      required: data.required,
+      amharic_only: data.amharic_only,
+      min_words: data.min_words,
+      max_words: data.max_words,
+      exact_words: data.exact_words,
+      error_am: data.error_am,
+      error_en: data.error_en,
+      options: data.options,
+      active: data.active,
+    };
+    const query = data.id
+      ? supabaseAdmin.from("registration_questions").update(row).eq("id", data.id)
+      : supabaseAdmin.from("registration_questions").insert(row);
+    const { error } = await query;
+    if (error) {
+      throw new Error(
+        error.code === "23505"
+          ? "A question with that key already exists"
+          : "Could not save the question",
+      );
+    }
+    return { ok: true };
+  });
+
+export const deleteQuestion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({ id: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const { error } = await supabaseAdmin
+      .from("registration_questions")
+      .delete()
+      .eq("id", data.id);
+    if (error) throw new Error("Could not delete the question");
+    return { ok: true };
+  });
+
+/** Saves a new order for the draft questions. */
+export const reorderQuestions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({ ids: z.array(z.string().uuid()).min(1).max(100) })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    for (const [index, id] of data.ids.entries()) {
+      const { error } = await supabaseAdmin
+        .from("registration_questions")
+        .update({ position: index + 1 })
+        .eq("id", id);
+      if (error) throw new Error("Could not save the new order");
+    }
+    return { ok: true };
+  });
+
+/** Publishes the current draft so the Telegram bot starts using it. */
+export const publishQuestions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const { data: draft, error } = await supabaseAdmin
+      .from("registration_questions")
+      .select(QUESTION_COLUMNS)
+      .eq("active", true)
+      .order("position", { ascending: true });
+    if (error) throw new Error("Could not read the draft questions");
+    const questions = (draft ?? []).map(({ id: _id, ...rest }) => rest);
+    if (!questions.length) throw new Error("Add at least one active question");
+
+    const { data: latest } = await supabaseAdmin
+      .from("registration_question_versions")
+      .select("version")
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const version = (latest?.version ?? 0) + 1;
+
+    const { error: insertError } = await supabaseAdmin
+      .from("registration_question_versions")
+      .insert({ version, questions, published_by: context.userId });
+    if (insertError) throw new Error("Could not publish the questions");
+    return { ok: true, version, count: questions.length };
   });
