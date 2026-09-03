@@ -68,6 +68,149 @@ export type Database = {
         }
         Relationships: []
       }
+      form_fields: {
+        Row: {
+          active: boolean
+          created_at: string
+          error_am: string
+          error_en: string
+          field_key: string
+          field_type: string
+          form_id: string
+          help_am: string
+          help_en: string
+          id: string
+          label_am: string
+          label_en: string
+          options: Json
+          placeholder: string
+          position: number
+          required: boolean
+          updated_at: string
+          validation: Json
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          error_am?: string
+          error_en?: string
+          field_key: string
+          field_type?: string
+          form_id: string
+          help_am?: string
+          help_en?: string
+          id?: string
+          label_am?: string
+          label_en?: string
+          options?: Json
+          placeholder?: string
+          position?: number
+          required?: boolean
+          updated_at?: string
+          validation?: Json
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          error_am?: string
+          error_en?: string
+          field_key?: string
+          field_type?: string
+          form_id?: string
+          help_am?: string
+          help_en?: string
+          id?: string
+          label_am?: string
+          label_en?: string
+          options?: Json
+          placeholder?: string
+          position?: number
+          required?: boolean
+          updated_at?: string
+          validation?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form_fields_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "module_forms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      form_submissions: {
+        Row: {
+          answers: Json
+          assigned_label: string
+          assigned_to: string | null
+          created_at: string
+          files: Json
+          form_id: string
+          id: string
+          module_id: string
+          registration_id: string | null
+          review_note: string
+          status: string
+          student_name: string
+          submission_code: string
+          submitted_by: string | null
+          telegram_user_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          answers?: Json
+          assigned_label?: string
+          assigned_to?: string | null
+          created_at?: string
+          files?: Json
+          form_id: string
+          id?: string
+          module_id: string
+          registration_id?: string | null
+          review_note?: string
+          status?: string
+          student_name?: string
+          submission_code?: string
+          submitted_by?: string | null
+          telegram_user_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          answers?: Json
+          assigned_label?: string
+          assigned_to?: string | null
+          created_at?: string
+          files?: Json
+          form_id?: string
+          id?: string
+          module_id?: string
+          registration_id?: string | null
+          review_note?: string
+          status?: string
+          student_name?: string
+          submission_code?: string
+          submitted_by?: string | null
+          telegram_user_id?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form_submissions_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "module_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_submissions_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "platform_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       help_content: {
         Row: {
           announcements: string
@@ -97,6 +240,160 @@ export type Database = {
           instructions?: string
           lang?: string
           title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      module_forms: {
+        Row: {
+          active: boolean
+          created_at: string
+          description_am: string
+          description_en: string
+          display_order: number
+          id: string
+          module_id: string
+          published: boolean
+          requires_student_id: boolean
+          slug: string
+          title_am: string
+          title_en: string
+          updated_at: string
+          workflow_enabled: boolean
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description_am?: string
+          description_en?: string
+          display_order?: number
+          id?: string
+          module_id: string
+          published?: boolean
+          requires_student_id?: boolean
+          slug: string
+          title_am?: string
+          title_en?: string
+          updated_at?: string
+          workflow_enabled?: boolean
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description_am?: string
+          description_en?: string
+          display_order?: number
+          id?: string
+          module_id?: string
+          published?: boolean
+          requires_student_id?: boolean
+          slug?: string
+          title_am?: string
+          title_en?: string
+          updated_at?: string
+          workflow_enabled?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "module_forms_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "platform_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      module_permissions: {
+        Row: {
+          can_manage: boolean
+          can_submit: boolean
+          can_view: boolean
+          created_at: string
+          id: string
+          module_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+        }
+        Insert: {
+          can_manage?: boolean
+          can_submit?: boolean
+          can_view?: boolean
+          created_at?: string
+          id?: string
+          module_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Update: {
+          can_manage?: boolean
+          can_submit?: boolean
+          can_view?: boolean
+          created_at?: string
+          id?: string
+          module_id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "module_permissions_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "platform_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_modules: {
+        Row: {
+          active: boolean
+          admin_visible: boolean
+          category: string
+          created_at: string
+          description_am: string
+          description_en: string
+          display_order: number
+          icon: string
+          id: string
+          is_system: boolean
+          name_am: string
+          name_en: string
+          slug: string
+          student_visible: boolean
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          admin_visible?: boolean
+          category?: string
+          created_at?: string
+          description_am?: string
+          description_en?: string
+          display_order?: number
+          icon?: string
+          id?: string
+          is_system?: boolean
+          name_am?: string
+          name_en?: string
+          slug: string
+          student_visible?: boolean
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          admin_visible?: boolean
+          category?: string
+          created_at?: string
+          description_am?: string
+          description_en?: string
+          display_order?: number
+          icon?: string
+          id?: string
+          is_system?: boolean
+          name_am?: string
+          name_en?: string
+          slug?: string
+          student_visible?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -289,6 +586,47 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      submission_events: {
+        Row: {
+          actor_id: string | null
+          actor_label: string
+          created_at: string
+          from_status: string
+          id: string
+          note: string
+          submission_id: string
+          to_status: string
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_label?: string
+          created_at?: string
+          from_status?: string
+          id?: string
+          note?: string
+          submission_id: string
+          to_status?: string
+        }
+        Update: {
+          actor_id?: string | null
+          actor_label?: string
+          created_at?: string
+          from_status?: string
+          id?: string
+          note?: string
+          submission_id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "submission_events_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "form_submissions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       telegram_updates: {
         Row: {
