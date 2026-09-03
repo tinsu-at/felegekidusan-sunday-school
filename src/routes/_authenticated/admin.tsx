@@ -284,10 +284,14 @@ function AdminPage() {
         </div>
 
         {tab === "settings" ? (
-          <AdminSettingsPanel
-            isOwner={isOwner}
-            currentEmail={statusQuery.data?.email}
-          />
+          <div className="space-y-6">
+            <AdminSettingsPanel
+              isOwner={isOwner}
+              currentEmail={statusQuery.data?.email}
+            />
+            {isOwner ? <QuestionsPanel isOwner={isOwner} /> : null}
+          </div>
+
 
         ) : (
         <>
