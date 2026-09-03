@@ -40,6 +40,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AdminSettingsPanel } from "@/components/admin/settings-panel";
+import { QuestionsPanel } from "@/components/admin/questions-panel";
+
 import { LanguageToggle } from "@/components/language-toggle";
 import logoAsset from "@/assets/sunday-school-logo.jpg.asset.json";
 import { supabase } from "@/integrations/supabase/client";
