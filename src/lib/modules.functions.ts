@@ -639,13 +639,5 @@ export const submitPublicForm = createServerFn({ method: "POST" })
       .maybeSingle();
     if (error || !inserted) throw new Error("Could not save your submission");
 
-    await supabaseAdmin.from("submission_events").insert({
-      submission_id: undefined as never,
-      to_status: "pending",
-    } as never).then(
-      () => undefined,
-      () => undefined,
-    );
-
     return { ok: true, code: inserted.submission_code };
   });
