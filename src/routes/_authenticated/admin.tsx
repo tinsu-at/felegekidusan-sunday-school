@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/table";
 import { AdminSettingsPanel } from "@/components/admin/settings-panel";
 import { QuestionsPanel } from "@/components/admin/questions-panel";
+import { ModulesPanel } from "@/components/admin/modules-panel";
 
 import { LanguageToggle } from "@/components/language-toggle";
 import logoAsset from "@/assets/sunday-school-logo.jpg.asset.json";
