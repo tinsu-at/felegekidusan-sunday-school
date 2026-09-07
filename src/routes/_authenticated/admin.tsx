@@ -247,6 +247,10 @@ function AdminPage() {
           {(
             [
               ["registrations", tt.tabRegistrations],
+              [
+                "modules",
+                lang === "am" ? "ክፍሎች እና ቅጾች" : "Departments & Forms",
+              ],
               ["settings", tt.tabSettings],
             ] as const
           ).map(([key, label]) => (
