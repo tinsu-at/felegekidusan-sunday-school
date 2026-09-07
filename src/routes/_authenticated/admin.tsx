@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/table";
 import { AdminSettingsPanel } from "@/components/admin/settings-panel";
 import { QuestionsPanel } from "@/components/admin/questions-panel";
+import { ModulesPanel } from "@/components/admin/modules-panel";
 
 import { LanguageToggle } from "@/components/language-toggle";
 import logoAsset from "@/assets/sunday-school-logo.jpg.asset.json";
@@ -102,7 +103,9 @@ function AdminPage() {
   const [editing, setEditing] = useState<AdminRegistration | null>(null);
   const [viewing, setViewing] = useState<AdminRegistration | null>(null);
   const [deleting, setDeleting] = useState<AdminRegistration | null>(null);
-  const [tab, setTab] = useState<"registrations" | "settings">("registrations");
+  const [tab, setTab] = useState<"registrations" | "modules" | "settings">(
+    "registrations",
+  );
 
   const statusQuery = useQuery({
     queryKey: ["admin-status"],
@@ -245,6 +248,10 @@ function AdminPage() {
           {(
             [
               ["registrations", tt.tabRegistrations],
+              [
+                "modules",
+                lang === "am" ? "ክፍሎች እና ቅጾች" : "Departments & Forms",
+              ],
               ["settings", tt.tabSettings],
             ] as const
           ).map(([key, label]) => (
@@ -285,7 +292,9 @@ function AdminPage() {
           ) : null}
         </div>
 
-        {tab === "settings" ? (
+        {tab === "modules" ? (
+          <ModulesPanel isOwner={isOwner} />
+        ) : tab === "settings" ? (
           <div className="space-y-6">
             <AdminSettingsPanel
               isOwner={isOwner}
