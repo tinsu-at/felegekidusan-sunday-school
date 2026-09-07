@@ -102,7 +102,9 @@ function AdminPage() {
   const [editing, setEditing] = useState<AdminRegistration | null>(null);
   const [viewing, setViewing] = useState<AdminRegistration | null>(null);
   const [deleting, setDeleting] = useState<AdminRegistration | null>(null);
-  const [tab, setTab] = useState<"registrations" | "settings">("registrations");
+  const [tab, setTab] = useState<"registrations" | "modules" | "settings">(
+    "registrations",
+  );
 
   const statusQuery = useQuery({
     queryKey: ["admin-status"],
