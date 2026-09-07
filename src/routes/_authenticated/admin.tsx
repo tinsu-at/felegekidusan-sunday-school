@@ -291,7 +291,9 @@ function AdminPage() {
           ) : null}
         </div>
 
-        {tab === "settings" ? (
+        {tab === "modules" ? (
+          <ModulesPanel isOwner={isOwner} />
+        ) : tab === "settings" ? (
           <div className="space-y-6">
             <AdminSettingsPanel
               isOwner={isOwner}
