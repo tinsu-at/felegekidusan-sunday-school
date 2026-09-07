@@ -632,7 +632,7 @@ export const submitPublicForm = createServerFn({ method: "POST" })
         registration_id: registrationId,
         student_name: studentName,
         telegram_user_id: telegramUserId,
-        answers,
+        answers: answers as Record<string, never>,
         status: "pending",
       })
       .select("submission_code")

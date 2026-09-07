@@ -231,7 +231,7 @@ function FieldInput({
   field: FormFieldConfig;
   lang: "am" | "en";
   value: unknown;
-  error?: string;
+  error?: string | undefined;
   onChange: (value: unknown) => void;
 }) {
   const label = fieldLabel(field, lang);

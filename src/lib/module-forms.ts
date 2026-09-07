@@ -125,6 +125,14 @@ export type ModulePermission = {
   can_manage: boolean;
 };
 
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
 export type FormSubmissionRecord = {
   id: string;
   submission_code: string;
@@ -132,8 +140,8 @@ export type FormSubmissionRecord = {
   module_id: string;
   registration_id: string | null;
   student_name: string;
-  answers: Record<string, unknown>;
-  files: unknown[];
+  answers: Record<string, JsonValue>;
+  files: JsonValue[];
   status: string;
   assigned_label: string;
   review_note: string;
