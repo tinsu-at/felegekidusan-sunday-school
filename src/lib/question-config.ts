@@ -100,6 +100,21 @@ export function currentEthiopianYear(): number {
   return afterNewYear ? gYear - 7 : gYear - 8;
 }
 
+/**
+ * Age in Ethiopian calendar years: current EC year minus the birth year,
+ * minus one when the birth month falls in the second half of the year
+ * (months 7–13). Returns null when there is no usable birth year.
+ */
+export function ethiopianAge(
+  birthYear: number | null | undefined,
+  birthMonth?: number | null,
+): number | null {
+  if (!birthYear || birthYear < 1900) return null;
+  let age = currentEthiopianYear() - birthYear;
+  if (birthMonth != null && birthMonth >= 7 && birthMonth <= 13) age -= 1;
+  return age < 0 ? null : age;
+}
+
 const ETHIOPIC_WORD = /^[\u1200-\u137F]+$/;
 const LATIN_WORD = /^[A-Za-z][A-Za-z'’.-]*$/;
 
