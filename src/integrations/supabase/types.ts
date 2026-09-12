@@ -520,6 +520,7 @@ export type Database = {
       }
       registrations: {
         Row: {
+          age_years: number | null
           birth_date_ec: string | null
           birth_day_ec: number | null
           birth_month_ec: number | null
@@ -542,6 +543,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          age_years?: number | null
           birth_date_ec?: string | null
           birth_day_ec?: number | null
           birth_month_ec?: number | null
@@ -564,6 +566,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          age_years?: number | null
           birth_date_ec?: string | null
           birth_day_ec?: number | null
           birth_month_ec?: number | null
