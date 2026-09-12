@@ -58,6 +58,7 @@ type Dict = {
       christianName: string;
       gender: string;
       birthDate: string;
+      age: string;
       motherName: string;
       motherPhone: string;
       fatherName: string;
@@ -195,6 +196,7 @@ const am: Dict = {
       christianName: "የክርስትና ስም",
       gender: "ጾታ",
       birthDate: "የትውልድ ቀን",
+      age: "ዕድሜ",
       motherName: "የእናት ስም",
       motherPhone: "የእናት ስልክ",
       fatherName: "የአባት ስም",
@@ -340,6 +342,7 @@ const en: Dict = {
       christianName: "Christian name",
       gender: "Gender",
       birthDate: "Date of birth",
+      age: "Age",
       motherName: "Mother's name",
       motherPhone: "Mother's phone",
       fatherName: "Father's name",
