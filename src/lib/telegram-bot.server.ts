@@ -10,6 +10,7 @@
 import { helpMessage } from "@/lib/help-content.server";
 import {
   currentEthiopianYear,
+  ethiopianAge,
   isCoreField,
   label as questionLabel,
   optionLabel,
@@ -414,6 +415,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
         birth_day_ec: date?.day ?? null,
         birth_month_ec: date?.month ?? null,
         birth_year_ec: date?.year ?? (yearOnly >= 1900 ? yearOnly : 0),
+        age_years: date ? ethiopianAge(date.year, date.month) : null,
         mother_name: answers["mother_name"] ?? "-",
         mother_phone: answers["mother_phone"] ?? "-",
         father_name: answers["father_name"] ?? "-",
