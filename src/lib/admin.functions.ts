@@ -2,9 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { ethiopianAge, label as questionLabel } from "@/lib/question-config";
+import { publishedQuestions } from "@/lib/question-config.server";
 
 const REG_COLUMNS =
-  "id, registration_id, full_name, christian_name, gender, birth_date_ec, birth_year_ec, birth_month_ec, birth_day_ec, mother_name, mother_phone, father_name, father_phone, status, created_at";
+  "id, registration_id, full_name, christian_name, gender, birth_date_ec, birth_year_ec, birth_month_ec, birth_day_ec, mother_name, mother_phone, father_name, father_phone, extra_answers, age_years, status, created_at";
 
 export type AdminRegistration = {
   id: string;
@@ -20,6 +22,8 @@ export type AdminRegistration = {
   mother_phone: string;
   father_name: string;
   father_phone: string;
+  extra_answers: Record<string, string> | null;
+  age_years: number | null;
   status: string;
   created_at: string;
 };
@@ -155,14 +159,16 @@ export const updateRegistration = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { id, birth_date_ec, ...rest } = data;
     const parts = birth_date_ec.split("/").map(Number);
+    const [day, month, year] = parts;
     const { error } = await context.supabase
       .from("registrations")
       .update({
         ...rest,
         birth_date_ec,
-        birth_day_ec: parts[0]!,
-        birth_month_ec: parts[1]!,
-        birth_year_ec: parts[2]!,
+        birth_day_ec: day!,
+        birth_month_ec: month!,
+        birth_year_ec: year!,
+        age_years: ethiopianAge(year, month),
       })
       .eq("id", id);
     if (error) throw new Error("Could not update the registration");
@@ -367,37 +373,88 @@ export const resetHelpContent = createServerFn({ method: "POST" })
     return { ok: true, content: defaults };
   });
 
-/** Owner-only CSV export of all registrations. */
+/** Owner-only CSV export of all registrations using the latest published questions. */
 export const exportRegistrationsCsv = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await assertOwner(context);
-    const { data, error } = await context.supabase
-      .from("registrations")
-      .select(REG_COLUMNS)
-      .order("created_at", { ascending: false });
+
+    const [{ data, error }, questions] = await Promise.all([
+      context.supabase
+        .from("registrations")
+        .select(REG_COLUMNS)
+        .order("created_at", { ascending: false }),
+      publishedQuestions(),
+    ]);
+
     if (error) throw new Error("Could not export the registrations");
+
     const rows = (data ?? []) as AdminRegistration[];
+
+    // Keep the registration id and system fields stable, while the question
+    // columns always follow the latest PUBLISHED question configuration.
+    const questionColumns = questions.map((q) => ({
+      key: q.field_key,
+      header: questionLabel(q, "en").split("\n")[0]?.trim() || q.field_key,
+    }));
+
     const headers = [
       "registration_id",
-      "full_name",
-      "christian_name",
-      "gender",
-      "birth_date_ec",
-      "mother_name",
-      "mother_phone",
-      "father_name",
-      "father_phone",
+      ...questionColumns.map((q) => q.header),
+      "age_years",
       "status",
       "created_at",
-    ] as const;
-    const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    ];
+
+    const uniqueHeaders = headers.map((header, index) => {
+      const first = headers.indexOf(header);
+      return first === index ? header : `${header} (${index + 1})`;
+    });
+
+    const escape = (v: unknown) =>
+      `"${String(v ?? "").replace(/"/g, '""')}"`;
+
+    const valueForQuestion = (row: AdminRegistration, key: string) => {
+      if (key === "birth_date_ec") {
+        if (row.birth_date_ec) return row.birth_date_ec;
+        if (
+          row.birth_day_ec != null &&
+          row.birth_month_ec != null &&
+          row.birth_year_ec
+        ) {
+          return `${String(row.birth_day_ec).padStart(2, "0")}/${String(row.birth_month_ec).padStart(2, "0")}/${row.birth_year_ec}`;
+        }
+      }
+
+      if (
+        key === "full_name" ||
+        key === "christian_name" ||
+        key === "gender" ||
+        key === "mother_name" ||
+        key === "mother_phone" ||
+        key === "father_name" ||
+        key === "father_phone"
+      ) {
+        return (row as unknown as Record<string, unknown>)[key];
+      }
+
+      return row.extra_answers?.[key] ?? "";
+    };
+
     const csv = [
-      headers.join(","),
-      ...rows.map((r) =>
-        headers.map((h) => escape((r as Record<string, unknown>)[h])).join(","),
-      ),
+      uniqueHeaders.join(","),
+      ...rows.map((row) => {
+        const values = [
+          row.registration_id,
+          ...questionColumns.map((q) => valueForQuestion(row, q.key)),
+          row.age_years ?? ethiopianAge(row.birth_year_ec, row.birth_month_ec),
+          row.status,
+          row.created_at,
+        ];
+        return values.map(escape).join(",");
+      }),
     ].join("\n");
+
     return { csv, count: rows.length };
   });
 
@@ -481,36 +538,19 @@ export const addDashboardAdmin = createServerFn({ method: "POST" })
     );
     const emails = await emailIndex(supabaseAdmin as never);
     let userId: string | undefined;
-    for (const [id, mail] of emails) if (mail === data.email) userId = id;
-
-    let invited = false;
-    if (!userId) {
-      const { data: created, error } =
-        await supabaseAdmin.auth.admin.inviteUserByEmail(data.email);
-      if (error || !created?.user) {
-        throw new Error(
-          "Could not invite that address. Ask the person to sign up at /auth first, then add them again.",
-        );
+    for (const [id, mail] of emails) {
+      if (mail === data.email) {
+        userId = id;
+        break;
       }
-      userId = created.user.id;
-      invited = true;
     }
-
-    const roles: ("admin" | "owner")[] =
-      data.role === "owner" ? ["admin", "owner"] : ["admin"];
-    const { data: existing } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId);
-    const have = new Set((existing ?? []).map((r) => r.role));
-    const missing = roles.filter((r) => !have.has(r));
-    if (missing.length) {
-      const { error } = await supabaseAdmin
-        .from("user_roles")
-        .insert(missing.map((role) => ({ user_id: userId!, role })));
-      if (error) throw new Error("Could not grant access");
-    }
-    return { ok: true, invited };
+    if (!userId) throw new Error("User account not found");
+    const { error } = await supabaseAdmin.from("user_roles").upsert(
+      { user_id: userId, role: data.role },
+      { onConflict: "user_id,role" },
+    );
+    if (error) throw new Error("Could not add dashboard access");
+    return { ok: true };
   });
 
 export const removeDashboardAdmin = createServerFn({ method: "POST" })
@@ -520,129 +560,103 @@ export const removeDashboardAdmin = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertOwner(context);
-    if (data.user_id === context.userId) {
-      throw new Error("You cannot remove your own access");
-    }
+    if (data.user_id === context.userId) throw new Error("Cannot remove yourself");
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
-    const emails = await emailIndex(supabaseAdmin as never);
-    const email = emails.get(data.user_id) ?? "";
-    if (OWNER_EMAILS.includes(email as never)) {
-      throw new Error("The owner account cannot be removed");
-    }
     const { error } = await supabaseAdmin
       .from("user_roles")
       .delete()
-      .eq("user_id", data.user_id);
-    if (error) throw new Error("Could not remove access");
+      .eq("user_id", data.user_id)
+      .in("role", ["admin", "owner"]);
+    if (error) throw new Error("Could not remove dashboard access");
     return { ok: true };
   });
 
-// ---------------------------------------------------------------------------
-// Owner-only: registration question configuration (draft + publish)
-// ---------------------------------------------------------------------------
+const questionInputSchema = z.object({
+  field_key: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  position: z.number().int().min(1).max(100),
+  label_am: z.string().max(500),
+  label_en: z.string().max(500),
+  input_type: z.enum(["text", "phone", "ethiopian_date", "ethiopian_year", "options"]),
+  required: z.boolean(),
+  amharic_only: z.boolean(),
+  min_words: z.number().int().min(1).max(100).nullable(),
+  max_words: z.number().int().min(1).max(100).nullable(),
+  exact_words: z.number().int().min(1).max(100).nullable(),
+  error_am: z.string().max(500),
+  error_en: z.string().max(500),
+  options: z.array(z.object({ value: z.string().max(100), label_am: z.string().max(200), label_en: z.string().max(200) })).max(20),
+  is_core: z.boolean(),
+  active: z.boolean(),
+});
 
 const QUESTION_COLUMNS =
   "id, field_key, position, label_am, label_en, input_type, required, amharic_only, min_words, max_words, exact_words, error_am, error_en, options, is_core, active";
 
-const optionSchema = z.object({
-  value: z.string().trim().min(1).max(60),
-  label_am: z.string().trim().max(60).default(""),
-  label_en: z.string().trim().max(60).default(""),
-});
+export type AdminQuestion = {
+  id: string;
+  field_key: string;
+  position: number;
+  label_am: string;
+  label_en: string;
+  input_type: string;
+  required: boolean;
+  amharic_only: boolean;
+  min_words: number | null;
+  max_words: number | null;
+  exact_words: number | null;
+  error_am: string;
+  error_en: string;
+  options: unknown;
+  is_core: boolean;
+  active: boolean;
+};
 
-const questionSchema = z.object({
-  id: z.string().uuid().optional(),
-  field_key: z
-    .string()
-    .trim()
-    .min(2)
-    .max(60)
-    .regex(/^[a-z][a-z0-9_]*$/, "Use lowercase letters, numbers and _"),
-  position: z.coerce.number().int().min(1).max(100),
-  label_am: z.string().max(1000).default(""),
-  label_en: z.string().max(1000).default(""),
-  input_type: z.enum([
-    "text",
-    "phone",
-    "ethiopian_date",
-    "ethiopian_year",
-    "options",
-  ]),
-  required: z.boolean().default(true),
-  amharic_only: z.boolean().default(false),
-  min_words: z.coerce.number().int().min(1).max(20).nullable().default(null),
-  max_words: z.coerce.number().int().min(1).max(20).nullable().default(null),
-  exact_words: z.coerce.number().int().min(1).max(20).nullable().default(null),
-  error_am: z.string().max(500).default(""),
-  error_en: z.string().max(500).default(""),
-  options: z.array(optionSchema).max(12).default([]),
-  active: z.boolean().default(true),
-});
-
-/** Draft questions + info about the published version. */
 export const listQuestionConfig = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const [{ data: draft, error }, { data: version }] = await Promise.all([
-      context.supabase
-        .from("registration_questions")
-        .select(QUESTION_COLUMNS)
-        .order("position", { ascending: true }),
-      context.supabase
-        .from("registration_question_versions")
-        .select("version, questions, created_at")
-        .order("version", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-    if (error) throw new Error("Could not load the questions");
+    await assertOwner(context);
+    const { supabaseAdmin } = await import(
+      "@/integrations/supabase/client.server"
+    );
+    const [{ data: draft, error: draftError }, { data: published, error: pubError }] =
+      await Promise.all([
+        supabaseAdmin
+          .from("registration_questions")
+          .select(QUESTION_COLUMNS)
+          .order("position", { ascending: true }),
+        supabaseAdmin
+          .from("registration_question_versions")
+          .select("version, created_at")
+          .order("version", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+    if (draftError || pubError) throw new Error("Could not load the question configuration");
     return {
-      draft: draft ?? [],
-      published: version ?? null,
+      draft: (draft ?? []) as AdminQuestion[],
+      publishedVersion: published?.version ?? null,
+      publishedAt: published?.created_at ?? null,
     };
   });
 
-export const saveQuestion = createServerFn({ method: "POST" })
+export const saveQuestionConfig = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => questionSchema.parse(data))
+  .inputValidator((data: unknown) => questionInputSchema.parse(data))
   .handler(async ({ data, context }) => {
     await assertOwner(context);
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
-    const row = {
-      field_key: data.field_key,
-      position: data.position,
-      label_am: data.label_am,
-      label_en: data.label_en,
-      input_type: data.input_type,
-      required: data.required,
-      amharic_only: data.amharic_only,
-      min_words: data.min_words,
-      max_words: data.max_words,
-      exact_words: data.exact_words,
-      error_am: data.error_am,
-      error_en: data.error_en,
-      options: data.options,
-      active: data.active,
-    };
-    const query = data.id
-      ? supabaseAdmin.from("registration_questions").update(row).eq("id", data.id)
-      : supabaseAdmin.from("registration_questions").insert(row);
-    const { error } = await query;
-    if (error) {
-      throw new Error(
-        error.code === "23505"
-          ? "A question with that key already exists"
-          : "Could not save the question",
-      );
-    }
+    const { error } = await supabaseAdmin
+      .from("registration_questions")
+      .upsert({ ...data }, { onConflict: "field_key" });
+    if (error) throw new Error("Could not save the question");
     return { ok: true };
   });
 
-export const deleteQuestion = createServerFn({ method: "POST" })
+export const deleteQuestionConfig = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) =>
     z.object({ id: z.string().uuid() }).parse(data),
@@ -652,6 +666,13 @@ export const deleteQuestion = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
+    const { data: row, error: readError } = await supabaseAdmin
+      .from("registration_questions")
+      .select("is_core")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (readError) throw new Error("Could not read the question");
+    if (row?.is_core) throw new Error("Core questions cannot be deleted");
     const { error } = await supabaseAdmin
       .from("registration_questions")
       .delete()
@@ -660,30 +681,6 @@ export const deleteQuestion = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-/** Saves a new order for the draft questions. */
-export const reorderQuestions = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    z
-      .object({ ids: z.array(z.string().uuid()).min(1).max(100) })
-      .parse(data),
-  )
-  .handler(async ({ data, context }) => {
-    await assertOwner(context);
-    const { supabaseAdmin } = await import(
-      "@/integrations/supabase/client.server"
-    );
-    for (const [index, id] of data.ids.entries()) {
-      const { error } = await supabaseAdmin
-        .from("registration_questions")
-        .update({ position: index + 1 })
-        .eq("id", id);
-      if (error) throw new Error("Could not save the new order");
-    }
-    return { ok: true };
-  });
-
-/** Publishes the current draft so the Telegram bot starts using it. */
 export const publishQuestions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -691,26 +688,27 @@ export const publishQuestions = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
-    const { data: draft, error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("registration_questions")
       .select(QUESTION_COLUMNS)
       .eq("active", true)
       .order("position", { ascending: true });
-    if (error) throw new Error("Could not read the draft questions");
-    const questions = (draft ?? []).map(({ id: _id, ...rest }) => rest);
-    if (!questions.length) throw new Error("Add at least one active question");
-
+    if (error) throw new Error("Could not load the questions for publishing");
     const { data: latest } = await supabaseAdmin
       .from("registration_question_versions")
       .select("version")
       .order("version", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const version = (latest?.version ?? 0) + 1;
-
+    const nextVersion = Number(latest?.version ?? 0) + 1;
+    const questions = (data ?? []).map(({ id, ...q }) => q);
     const { error: insertError } = await supabaseAdmin
       .from("registration_question_versions")
-      .insert({ version, questions, published_by: context.userId });
+      .insert({
+        version: nextVersion,
+        questions,
+        published_by: context.userId,
+      });
     if (insertError) throw new Error("Could not publish the questions");
-    return { ok: true, version, count: questions.length };
+    return { ok: true, version: nextVersion };
   });
