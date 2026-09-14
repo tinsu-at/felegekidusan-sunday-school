@@ -13,7 +13,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -146,7 +146,7 @@ function AdminPage() {
       now.getDate(),
     );
     const startOfWeek = new Date(startOfDay);
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    startOfWeek.setDate(startOfDay.getDate() - startOfDay.getDay());
     return {
       total: list.length,
       pending: list.filter((r) => r.status === "pending").length,
@@ -218,7 +218,7 @@ function AdminPage() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/80 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-4">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
           <div className="flex items-center gap-3">
             <img src={logoAsset.src} alt="Sunday School" className="h-10 w-10 rounded-full object-cover" />
             <div>
@@ -233,7 +233,7 @@ function AdminPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-6">
+      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
         <div className="flex flex-wrap gap-2 border-b border-border pb-3">
           <Button variant={tab === "registrations" ? "default" : "outline"} onClick={() => setTab("registrations")}>{tt.tabRegistrations}</Button>
           <Button variant={tab === "modules" ? "default" : "outline"} onClick={() => setTab("modules")}>Modules</Button>
@@ -242,7 +242,7 @@ function AdminPage() {
 
         {tab === "modules" ? <ModulesPanel /> : tab === "settings" ? <><QuestionsPanel /><AdminSettingsPanel /></> : (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {["total", "pending", "approved", "rejected", "today", "week"].map((key) => (
                 <div key={key} className="rounded-xl border border-border bg-card p-4">
                   <div className="text-xs text-muted-foreground">{key}</div>
@@ -290,9 +290,13 @@ function AdminPage() {
                 </TableHeader>
                 <TableBody>
                   {regQuery.isLoading ? (
-                    <TableRow><TableCell colSpan={13}>{tt.loading}</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={13}>{tt.loading}</TableCell>
+                    </TableRow>
                   ) : rows.length === 0 ? (
-                    <TableRow><TableCell colSpan={13} className="py-10 text-center text-muted-foreground">{tt.empty}</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={13} className="py-10 text-center text-muted-foreground">{tt.empty}</TableCell>
+                    </TableRow>
                   ) : (
                     rows.map((r) => (
                       <TableRow key={r.id} className="hover:bg-muted/40">
@@ -309,8 +313,11 @@ function AdminPage() {
                         <TableCell className="whitespace-nowrap">{new Date(r.created_at).toLocaleDateString()}</TableCell>
                         <TableCell>
                           <Select value={r.status} onValueChange={async (value) => {
-                            try { await doStatus({ data: { id: r.id, status: value as "pending" } }); toast.success(tt.statusChanged); await refresh(); }
-                            catch { toast.error(tt.statusFailed); }
+                            try {
+                              await doStatus({ data: { id: r.id, status: value as "pending" } });
+                              toast.success(tt.statusChanged);
+                              await refresh();
+                            } catch { toast.error(tt.statusFailed); }
                           }}>
                             <SelectTrigger className={`w-36 rounded-full border-0 text-xs font-semibold ${STATUS_TONE[r.status] ?? ""}`}><SelectValue /></SelectTrigger>
                             <SelectContent>{statusOptions.map((v) => <SelectItem key={v} value={v}>{tt.status[v]}</SelectItem>)}</SelectContent>
@@ -329,13 +336,17 @@ function AdminPage() {
                 </TableBody>
               </Table>
             </div>
+            <p className="text-sm text-muted-foreground">{tt.showing(rows.length, regQuery.data?.length ?? 0)}</p>
           </>
         )}
       </main>
 
+      {/* Details */}
       <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{tt.detailsTitle}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{tt.detailsTitle}</DialogTitle>
+          </DialogHeader>
           {viewing ? (
             <dl className="space-y-2 text-sm">
               {[
@@ -343,13 +354,19 @@ function AdminPage() {
                 [`👤 ${tt.columns.fullName}`, viewing.full_name],
                 [`✝️ ${tt.columns.christianName}`, viewing.christian_name],
                 [`⚥ ${tt.columns.gender}`, genderLabel(viewing.gender, lang)],
-                [`🎂 ${tt.columns.birthDate}`, viewing.birth_date_ec ?? String(viewing.birth_year_ec)],
+                [
+                  `🎂 ${tt.columns.birthDate}`,
+                  viewing.birth_date_ec ?? String(viewing.birth_year_ec),
+                ],
                 [`🔢 ${tt.columns.age}`, viewing.age_years ?? "—"],
                 [`👩 ${tt.columns.motherName}`, viewing.mother_name],
                 [`📞 ${tt.columns.motherPhone}`, viewing.mother_phone],
                 [`👨 ${tt.columns.fatherName}`, viewing.father_name],
                 [`📞 ${tt.columns.fatherPhone}`, viewing.father_phone],
-                [tt.columns.status, tt.status[viewing.status] ?? viewing.status],
+                [
+                  tt.columns.status,
+                  tt.status[viewing.status] ?? viewing.status,
+                ],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4 border-b border-border/60 pb-2 last:border-0">
                   <dt className="text-muted-foreground">{k}</dt>
@@ -361,6 +378,7 @@ function AdminPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit */}
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>{tt.editTitle}</DialogTitle></DialogHeader>
@@ -373,7 +391,7 @@ function AdminPage() {
                   id: editing.id,
                   full_name: String(form.get("full_name") ?? ""),
                   christian_name: String(form.get("christian_name") ?? ""),
-                  gender: String(form.get("gender") ?? "ወንድ") as "ወንድ" | "ሴት",
+                  gender: String(form.get("gender") ?? editing.gender) as "ወንድ" | "ሴት",
                   birth_date_ec: String(form.get("birth_date_ec") ?? ""),
                   mother_name: String(form.get("mother_name") ?? ""),
                   mother_phone: String(form.get("mother_phone") ?? ""),
@@ -381,29 +399,44 @@ function AdminPage() {
                   father_phone: String(form.get("father_phone") ?? ""),
                   status: editing.status as "pending" | "approved" | "rejected",
                 }});
-                toast.success(tt.saved); setEditing(null); await refresh();
+                toast.success(tt.saved);
+                setEditing(null);
+                await refresh();
               } catch { toast.error(tt.saveFailed); }
             }}>
-              {[
-                ["full_name", tt.columns.fullName, editing.full_name],
-                ["christian_name", tt.columns.christianName, editing.christian_name],
-                ["birth_date_ec", tt.columns.birthDate, editing.birth_date_ec ?? String(editing.birth_year_ec)],
-                ["mother_name", tt.columns.motherName, editing.mother_name],
-                ["mother_phone", tt.columns.motherPhone, editing.mother_phone],
-                ["father_name", tt.columns.fatherName, editing.father_name],
-                ["father_phone", tt.columns.fatherPhone, editing.father_phone],
-              ].map(([name, label, value]) => <div key={name}><Label htmlFor={name}>{label}</Label><Input id={name} name={name} defaultValue={value} /></div>)}
-              <div><Label>{tt.columns.gender}</Label><Select name="gender" defaultValue={editing.gender}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ወንድ">{genderLabel("ወንድ", lang)}</SelectItem><SelectItem value="ሴት">{genderLabel("ሴት", lang)}</SelectItem></SelectContent></Select></div>
+              <div><Label htmlFor="full_name">{tt.columns.fullName}</Label><Input id="full_name" name="full_name" defaultValue={editing.full_name} /></div>
+              <div><Label htmlFor="christian_name">{tt.columns.christianName}</Label><Input id="christian_name" name="christian_name" defaultValue={editing.christian_name} /></div>
+              <div><Label htmlFor="birth_date_ec">{tt.columns.birthDate}</Label><Input id="birth_date_ec" name="birth_date_ec" defaultValue={editing.birth_date_ec ?? String(editing.birth_year_ec)} /></div>
+              <div><Label htmlFor="mother_name">{tt.columns.motherName}</Label><Input id="mother_name" name="mother_name" defaultValue={editing.mother_name} /></div>
+              <div><Label htmlFor="mother_phone">{tt.columns.motherPhone}</Label><Input id="mother_phone" name="mother_phone" defaultValue={editing.mother_phone} /></div>
+              <div><Label htmlFor="father_name">{tt.columns.fatherName}</Label><Input id="father_name" name="father_name" defaultValue={editing.father_name} /></div>
+              <div><Label htmlFor="father_phone">{tt.columns.fatherPhone}</Label><Input id="father_phone" name="father_phone" defaultValue={editing.father_phone} /></div>
+              <div><Label>{tt.columns.gender}</Label><Select name="gender" defaultValue={editing.gender}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ወንድ">{genderLabel("ወንድ", lang)}</SelectItem><SelectItem value="ሴት">{genderLabel("ሴት", lang)}</SelectItem></SelectContent></div>
               <DialogFooter><Button type="button" variant="outline" onClick={() => setEditing(null)}>{tt.cancel}</Button><Button type="submit">{tt.save}</Button></DialogFooter>
             </form>
           ) : null}
         </DialogContent>
       </Dialog>
 
+      {/* Delete */}
       <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>{tt.deleteTitle}</AlertDialogTitle><AlertDialogDescription>{tt.deleteBody}</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>{tt.cancel}</AlertDialogCancel><AlertDialogAction onClick={async () => { if (!deleting) return; try { await doDelete({ data: { id: deleting.id } }); toast.success(tt.deleted); setDeleting(null); await refresh(); } catch { toast.error(tt.deleteFailed); } }}>{tt.delete}</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tt.deleteTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{tt.deleteBody}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tt.cancel}</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => {
+              if (!deleting) return;
+              try {
+                await doDelete({ data: { id: deleting.id } });
+                toast.success(tt.deleted);
+                setDeleting(null);
+                await refresh();
+              } catch { toast.error(tt.deleteFailed); }
+            }}>{tt.delete}</AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
