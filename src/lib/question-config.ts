@@ -11,7 +11,7 @@ export type QuestionConfig = {
   error_am:string; error_en:string; options:QuestionOption[]; is_core:boolean; active:boolean; age_group:QuestionAgeGroup;
 };
 export type QuestionDraft = Omit<QuestionConfig,"age_group"> & { id:string; age_group?:QuestionAgeGroup };
-export const CORE_FIELD_KEYS = ["full_name","christian_name","gender","birth_date_ec","mother_name","mother_phone","father_name","father_phone"] as const;
+export const CORE_FIELD_KEYS = ["full_name","christian_name","gender","birth_date_ec"] as const;
 export function isCoreField(key:string){return (CORE_FIELD_KEYS as readonly string[]).includes(key)}
 export function label(q:QuestionConfig,lang:Lang){const text=lang==="en"?q.label_en:q.label_am;return text.trim()||q.label_am||q.label_en||q.field_key}
 export function optionLabel(o:QuestionOption,lang:Lang){return (lang==="en"?o.label_en:o.label_am)||o.value}
