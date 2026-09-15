@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useUiLang } from "@/lib/ui-i18n";
+import { QuestionsPanel } from "@/components/admin/questions-panel";
 import {
   addDashboardAdmin,
   listBotAdmins,
@@ -156,6 +157,7 @@ export function AdminSettingsPanel({
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      <QuestionsPanel isOwner={isOwner} />
       {/* Owner settings: dashboard accounts */}
       <section className="space-y-4 rounded-2xl border border-accent/40 bg-card p-6 shadow-sm lg:col-span-2">
         <div>
