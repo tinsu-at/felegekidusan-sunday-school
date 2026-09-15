@@ -181,11 +181,15 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   if (!userId || !chatId) return;
   if (cb?.id) await telegram("answerCallbackQuery", { callback_query_id: cb.id });
 
-  const [{ data: session }, { data: pref }, published] = await Promise.all([
+  const [{ data: session }, { data: pref }] = await Promise.all([
     supabaseAdmin.from("registration_sessions").select("step, answers, updated_at, age_group, question_version").eq("telegram_user_id", userId).maybeSingle(),
     supabaseAdmin.from("bot_user_prefs").select("lang").eq("telegram_user_id", userId).maybeSingle(),
-    publishedQuestionSet(),
   ]);
+
+  const sessionExpired = !!session?.updated_at && Date.now() - new Date(session.updated_at).getTime() > 24 * 60 * 60 * 1000;
+  const pinnedVersion = !sessionExpired && typeof session?.question_version === "number" ? session.question_version : undefined;
+  const published = await publishedQuestionSet(pinnedVersion);
+  const activeVersion = pinnedVersion ?? published.version;
 
   let lang: Lang = asLang(pref?.lang);
   const knownLanguage = !!pref;
@@ -193,7 +197,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   let answers: Answers = (session?.answers as Answers | null) ?? {};
   let step = String(session?.step ?? "idle");
 
-  if (session?.updated_at && Date.now() - new Date(session.updated_at).getTime() > 24 * 60 * 60 * 1000) {
+  if (sessionExpired) {
     await supabaseAdmin.from("registration_sessions").delete().eq("telegram_user_id", userId);
     answers = {};
     step = "idle";
@@ -208,7 +212,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       step: nextStep,
       answers: nextAnswers,
       age_group: group ?? nextAnswers._age_group ?? null,
-      question_version: version ?? published.version,
+      question_version: version ?? activeVersion,
     } as never, { onConflict: "telegram_user_id" });
   };
   const saveLanguage = async (next: Lang) => {
@@ -239,7 +243,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       regId = (data as string | null) ?? undefined;
     }
     const withId = { ...nextAnswers, ...(regId ? { reg_id: regId } : {}) };
-    await saveSession("confirm", withId, currentGroup, published.version);
+    await saveSession("confirm", withId, currentGroup, activeVersion);
     await sendMessage(chatId, summary(questions, withId, lang), confirmKeyboard(lang));
   };
 
@@ -247,14 +251,14 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     if (nextAnswers._editing_key) {
       const cleaned = { ...nextAnswers };
       delete cleaned._editing_key;
-      await saveSession("confirm", cleaned, currentGroup, published.version);
+      await saveSession("confirm", cleaned, currentGroup, activeVersion);
       await sendMessage(chatId, summary(questions, cleaned, lang), confirmKeyboard(lang));
       return;
     }
     const index = questions.findIndex((q) => q.field_key === currentKey);
     const next = questions[index + 1];
     if (!next) return goToConfirm(nextAnswers);
-    await saveSession(next.field_key, nextAnswers, currentGroup, published.version);
+    await saveSession(next.field_key, nextAnswers, currentGroup, activeVersion);
     await askQuestion(next);
   };
 
@@ -262,7 +266,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   if (cb?.data === "language") { await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD); return; }
 
   if (cb?.data === "start_reg") {
-    if (session && step !== "idle") { await sendMessage(chatId, lang === "am" ? "አልተጠናቀቀ ምዝገባ አለዎት።" : "You have an unfinished registration.", { inline_keyboard: [[{ text: "▶️ Continue", callback_data: "continue_reg" }], [{ text: "🗑️ Discard & Start New", callback_data: "discard_new" }]] }); return; }
+    if (session && step !== "idle" && !sessionExpired) { await sendMessage(chatId, lang === "am" ? "አልተጠናቀቀ ምዝገባ አለዎት።" : "You have an unfinished registration.", { inline_keyboard: [[{ text: "▶️ Continue", callback_data: "continue_reg" }], [{ text: "🗑️ Discard & Start New", callback_data: "discard_new" }]] }); return; }
     await sendMessage(chatId, lang === "am" ? "የተማሪውን የዕድሜ ቡድን ይምረጡ።" : "Please select the student's age group.", ageGroupKeyboard(lang));
     return;
   }
@@ -274,7 +278,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     await sendMessage(chatId, lang === "am" ? "የዕድሜ ቡድን ይምረጡ።" : "Select the age group.", ageGroupKeyboard(lang));
     return;
   }
-  if (cb?.data === "change_age_group") { await saveSession("age_group", answers, undefined, published.version); await sendMessage(chatId, lang === "am" ? "አዲሱን የዕድሜ ቡድን ይምረጡ።" : "Select the correct age group.", ageGroupKeyboard(lang)); return; }
+  if (cb?.data === "change_age_group") { await saveSession("age_group", answers, undefined, activeVersion); await sendMessage(chatId, lang === "am" ? "አዲሱን የዕድሜ ቡድን ይምረጡ።" : "Select the correct age group.", ageGroupKeyboard(lang)); return; }
 
   if (cb?.data?.startsWith("age_")) {
     const group = cb.data.slice(4) as RegistrationAgeGroup;
@@ -283,7 +287,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     const next = filtered[0];
     if (!next) { await sendMessage(chatId, lang === "am" ? "የምዝገባ ጥያቄዎች አልተዘጋጁም።" : "No registration questions are published yet."); return; }
     const nextAnswers: Answers = { _age_group: group };
-    await saveSession(next.field_key, nextAnswers, group, published.version);
+    await saveSession(next.field_key, nextAnswers, group, activeVersion);
     await sendMessage(chatId, `${lang === "am" ? "የተመረጠው ቡድን" : "Selected age group"}: ${groupLabel(group, lang)}`);
     await askQuestion(next);
     return;
@@ -292,20 +296,20 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   if (cb?.data === "help") { const help = await helpMessage(lang); await sendMessage(chatId, help.text, homeKeyboard(lang)); return; }
   if (cb?.data === "home") { await clearSession(); await sendMessage(chatId, T[lang].welcome, startKeyboard(lang)); return; }
   if (cb?.data === "confirm_no") { await clearSession(); await sendMessage(chatId, T[lang].cancelled); await sendMessage(chatId, T[lang].welcome, startKeyboard(lang)); return; }
-  if (cb?.data === "edit_answers") { await saveSession("edit", answers, currentGroup, published.version); await sendMessage(chatId, lang === "am" ? "የትኛውን መልስ ማስተካከል ይፈልጋሉ?" : "Which answer would you like to edit?", editKeyboard); return; }
-  if (cb?.data === "back_review") { await saveSession("confirm", answers, currentGroup, published.version); await sendMessage(chatId, summary(questions, answers, lang), confirmKeyboard(lang)); return; }
+  if (cb?.data === "edit_answers") { await saveSession("edit", answers, currentGroup, activeVersion); await sendMessage(chatId, lang === "am" ? "የትኛውን መልስ ማስተካከል ይፈልጋሉ?" : "Which answer would you like to edit?", editKeyboard); return; }
+  if (cb?.data === "back_review") { await saveSession("confirm", answers, currentGroup, activeVersion); await sendMessage(chatId, summary(questions, answers, lang), confirmKeyboard(lang)); return; }
   if (cb?.data?.startsWith("edit_")) {
     const key = cb.data.slice(5);
     const q = findQuestion(key);
     if (!q) return;
     const nextAnswers = { ...answers, _editing_key: key };
-    await saveSession(key, nextAnswers, currentGroup, published.version);
+    await saveSession(key, nextAnswers, currentGroup, activeVersion);
     await askQuestion(q);
     return;
   }
   if (cb?.data === "edit_birth_date_ec") {
     const q = findQuestion("birth_date_ec");
-    if (q) { const nextAnswers = { ...answers, _editing_key: "birth_date_ec" }; await saveSession("birth_date_ec", nextAnswers, currentGroup, published.version); await askQuestion(q); }
+    if (q) { const nextAnswers = { ...answers, _editing_key: "birth_date_ec" }; await saveSession("birth_date_ec", nextAnswers, currentGroup, activeVersion); await askQuestion(q); }
     return;
   }
   if (cb?.data === "back_question") {
@@ -314,7 +318,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     const index = questions.findIndex((q) => q.field_key === current.field_key);
     if (index <= 0) { await sendMessage(chatId, lang === "am" ? "የዕድሜ ቡድን ይምረጡ።" : "Select the age group.", ageGroupKeyboard(lang)); return; }
     const previous = questions[index - 1];
-    await saveSession(previous.field_key, answers, currentGroup, published.version);
+    await saveSession(previous.field_key, answers, currentGroup, activeVersion);
     await askQuestion(previous);
     return;
   }
@@ -349,7 +353,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       telegram_chat_id: chatId,
       telegram_username: username,
       age_group: currentGroup,
-      question_version: published.version || null,
+      question_version: activeVersion || null,
       full_name: answers.full_name ?? "-",
       christian_name: answers.christian_name ?? "-",
       gender: answers.gender ?? "-",
@@ -384,7 +388,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   const text = (msg?.text ?? "").trim();
   if (!text) return;
   if (text.startsWith("/start")) {
-    if (session && step !== "idle") { await sendMessage(chatId, lang === "am" ? "አልተጠናቀቀ ምዝገባ አለዎት።" : "You have an unfinished registration.", { inline_keyboard: [[{ text: "▶️ Continue", callback_data: "continue_reg" }], [{ text: "🗑️ Discard & Start New", callback_data: "discard_new" }]] }); return; }
+    if (session && step !== "idle" && !sessionExpired) { await sendMessage(chatId, lang === "am" ? "አልተጠናቀቀ ምዝገባ አለዎት።" : "You have an unfinished registration.", { inline_keyboard: [[{ text: "▶️ Continue", callback_data: "continue_reg" }], [{ text: "🗑️ Discard & Start New", callback_data: "discard_new" }]] }); return; }
     if (!knownLanguage) { await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD); return; }
     await sendMessage(chatId, T[lang].welcome, startKeyboard(lang)); return;
   }
