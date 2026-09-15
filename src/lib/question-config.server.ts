@@ -1,15 +1,15 @@
 /**
  * Server-only access to the registration question configuration.
- * The bot always uses the newest PUBLISHED snapshot so the owner can change
- * questions from the dashboard with no code change and no redeployment.
  */
-
 import {
   INPUT_TYPES,
   type InputType,
   type QuestionConfig,
   type QuestionOption,
 } from "@/lib/question-config";
+
+export type RegistrationAgeGroup = "7_13" | "14_17" | "18_plus";
+export type QuestionAgeGroup = "all" | RegistrationAgeGroup;
 
 function asInputType(value: unknown): InputType {
   return (INPUT_TYPES as readonly string[]).includes(String(value))
@@ -41,6 +41,7 @@ function asNumberOrNull(value: unknown): number | null {
 
 export function normalizeQuestion(raw: unknown, index: number): QuestionConfig {
   const r = (raw ?? {}) as Record<string, unknown>;
+  const ageGroup = String(r["age_group"] ?? "all");
   return {
     field_key: String(r["field_key"] ?? `question_${index + 1}`),
     position: Number(r["position"] ?? index + 1),
@@ -57,7 +58,10 @@ export function normalizeQuestion(raw: unknown, index: number): QuestionConfig {
     options: asOptions(r["options"]),
     is_core: r["is_core"] === true,
     active: r["active"] !== false,
-  };
+    ...(ageGroup === "7_13" || ageGroup === "14_17" || ageGroup === "18_plus"
+      ? { age_group: ageGroup }
+      : { age_group: "all" }),
+  } as QuestionConfig;
 }
 
 export function normalizeQuestions(raw: unknown): QuestionConfig[] {
@@ -68,21 +72,30 @@ export function normalizeQuestions(raw: unknown): QuestionConfig[] {
     .sort((a, b) => a.position - b.position);
 }
 
-/** Newest published question list. Empty array when nothing is published yet. */
-export async function publishedQuestions(): Promise<QuestionConfig[]> {
+export async function publishedQuestionSet(): Promise<{
+  version: number;
+  questions: QuestionConfig[];
+}> {
   try {
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
     const { data } = await supabaseAdmin
       .from("registration_question_versions")
-      .select("questions")
+      .select("version, questions")
       .order("version", { ascending: false })
       .limit(1)
       .maybeSingle();
-    return normalizeQuestions(data?.questions);
+    return {
+      version: Number(data?.version ?? 0),
+      questions: normalizeQuestions(data?.questions),
+    };
   } catch {
     console.error("Published question configuration could not be loaded");
-    return [];
+    return { version: 0, questions: [] };
   }
+}
+
+export async function publishedQuestions(): Promise<QuestionConfig[]> {
+  return (await publishedQuestionSet()).questions;
 }

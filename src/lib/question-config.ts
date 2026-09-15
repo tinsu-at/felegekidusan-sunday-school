@@ -1,9 +1,6 @@
 /**
- * Shared (client + server safe) model for the configurable registration
- * questions. The Telegram bot reads the latest PUBLISHED configuration; the
- * owner dashboard edits the DRAFT rows. No secrets or server imports here.
+ * Shared (client + server safe) model for configurable registration questions.
  */
-
 import type { Lang } from "@/lib/telegram-i18n";
 
 export const INPUT_TYPES = [
@@ -15,6 +12,8 @@ export const INPUT_TYPES = [
 ] as const;
 
 export type InputType = (typeof INPUT_TYPES)[number];
+export type RegistrationAgeGroup = "7_13" | "14_17" | "18_plus";
+export type QuestionAgeGroup = "all" | RegistrationAgeGroup;
 
 export type QuestionOption = {
   value: string;
@@ -22,7 +21,6 @@ export type QuestionOption = {
   label_en: string;
 };
 
-/** One question as stored in the draft table and in a published snapshot. */
 export type QuestionConfig = {
   field_key: string;
   position: number;
@@ -39,12 +37,11 @@ export type QuestionConfig = {
   options: QuestionOption[];
   is_core: boolean;
   active: boolean;
+  age_group: QuestionAgeGroup;
 };
 
-/** Draft rows additionally carry the database id. */
 export type QuestionDraft = QuestionConfig & { id: string };
 
-/** Column-backed answers; anything else lands in registrations.extra_answers. */
 export const CORE_FIELD_KEYS = [
   "full_name",
   "christian_name",
@@ -69,26 +66,13 @@ export function optionLabel(o: QuestionOption, lang: Lang): string {
   return (lang === "en" ? o.label_en : o.label_am) || o.value;
 }
 
-// ---------- Validation ----------
-
 const ETHIOPIC_DIGITS: Record<string, string> = {
-  "፩": "1",
-  "፪": "2",
-  "፫": "3",
-  "፬": "4",
-  "፭": "5",
-  "፮": "6",
-  "፯": "7",
-  "፰": "8",
-  "፱": "9",
+  "፩": "1", "፪": "2", "፫": "3", "፬": "4", "፭": "5",
+  "፮": "6", "፯": "7", "፰": "8", "፱": "9",
 };
 
 export function normalizeDigits(input: string): string {
-  return input
-    .split("")
-    .map((c) => ETHIOPIC_DIGITS[c] ?? c)
-    .join("")
-    .trim();
+  return input.split("").map((c) => ETHIOPIC_DIGITS[c] ?? c).join("").trim();
 }
 
 export function currentEthiopianYear(): number {
@@ -100,15 +84,7 @@ export function currentEthiopianYear(): number {
   return afterNewYear ? gYear - 7 : gYear - 8;
 }
 
-/**
- * Age in Ethiopian calendar years: current EC year minus the birth year,
- * minus one when the birth month falls in the second half of the year
- * (months 7–13). Returns null when there is no usable birth year.
- */
-export function ethiopianAge(
-  birthYear: number | null | undefined,
-  birthMonth?: number | null,
-): number | null {
+export function ethiopianAge(birthYear: number | null | undefined, birthMonth?: number | null): number | null {
   if (!birthYear || birthYear < 1900) return null;
   let age = currentEthiopianYear() - birthYear;
   if (birthMonth != null && birthMonth >= 7 && birthMonth <= 13) age -= 1;
@@ -118,13 +94,9 @@ export function ethiopianAge(
 const ETHIOPIC_WORD = /^[\u1200-\u137F]+$/;
 const LATIN_WORD = /^[A-Za-z][A-Za-z'’.-]*$/;
 
-function isEthiopianLeapYear(year: number): boolean {
-  return year % 4 === 3;
-}
+function isEthiopianLeapYear(year: number): boolean { return year % 4 === 3; }
 
-export function validateEthiopianDate(
-  value: string,
-): { day: number; month: number; year: number; formatted: string } | null {
+export function validateEthiopianDate(value: string): { day: number; month: number; year: number; formatted: string } | null {
   const raw = normalizeDigits(value).replace(/[.\-]/g, "/").replace(/\s/g, "");
   const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
   if (!match) return null;
@@ -135,15 +107,13 @@ export function validateEthiopianDate(
   const maxDay = month === 13 ? (isEthiopianLeapYear(year) ? 6 : 5) : 30;
   if (day < 1 || day > maxDay) return null;
   if (year < 1950 || year > currentEthiopianYear()) return null;
-  const formatted = `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
-  return { day, month, year, formatted };
+  return { day, month, year, formatted: `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}` };
 }
 
 export function validateEthiopianYear(value: string): number | null {
   const raw = normalizeDigits(value).replace(/\D/g, "");
   const year = Number(raw);
-  if (!Number.isInteger(year)) return null;
-  if (year < 1950 || year > currentEthiopianYear()) return null;
+  if (!Number.isInteger(year) || year < 1950 || year > currentEthiopianYear()) return null;
   return year;
 }
 
@@ -156,15 +126,9 @@ export function validatePhone(value: string): string | null {
   return null;
 }
 
-/** Validates free text against the question's word/script rules. */
-export function validateText(
-  value: string,
-  q: QuestionConfig,
-  lang: Lang,
-): string | null {
+export function validateText(value: string, q: QuestionConfig, lang: Lang): string | null {
   const name = value.trim().replace(/\s+/g, " ");
-  if (!name) return null;
-  if (name.length > 200) return null;
+  if (!name || name.length > 200) return null;
   const words = name.split(" ");
   if (q.exact_words != null && words.length !== q.exact_words) return null;
   if (q.exact_words == null) {
@@ -172,8 +136,7 @@ export function validateText(
     if (q.max_words != null && words.length > q.max_words) return null;
   }
   if (q.amharic_only) {
-    const ok = (w: string) =>
-      ETHIOPIC_WORD.test(w) || (lang === "en" && LATIN_WORD.test(w));
+    const ok = (w: string) => ETHIOPIC_WORD.test(w) || (lang === "en" && LATIN_WORD.test(w));
     if (!words.every(ok)) return null;
   }
   return name;
@@ -182,60 +145,19 @@ export function validateText(
 export function questionError(q: QuestionConfig, lang: Lang): string {
   const custom = (lang === "en" ? q.error_en : q.error_am).trim();
   if (custom) return custom;
-  if (q.input_type === "phone") {
-    return lang === "en"
-      ? "⚠️ That phone number is not valid. Example: 0912345678"
-      : "⚠️ የስልክ ቁጥሩ ትክክል አይደለም። ለምሳሌ፦ 0912345678";
-  }
-  if (q.input_type === "ethiopian_date") {
-    return lang === "en"
-      ? `⚠️ Please use the Ethiopian calendar in DD/MM/YYYY format (year 1950–${currentEthiopianYear()}).`
-      : `⚠️ እባክዎ ቀኑን በኢትዮጵያ አቆጣጠር በቅርጸት ቀን/ወር/ዓመት ያስገቡ (ዓመት ከ1950 እስከ ${currentEthiopianYear()})።`;
-  }
-  if (q.input_type === "ethiopian_year") {
-    return lang === "en"
-      ? `⚠️ Please enter an Ethiopian calendar year between 1950 and ${currentEthiopianYear()}.`
-      : `⚠️ እባክዎ የትውልድ ዘመኑን በኢትዮጵያ አቆጣጠር ያስገቡ (ከ1950 እስከ ${currentEthiopianYear()})።`;
-  }
-  if (q.exact_words != null) {
-    return lang === "en"
-      ? `❌ Please enter exactly ${q.exact_words} words.`
-      : `❌ እባክዎ በ${q.exact_words} ቃላት ብቻ ያስገቡ።`;
-  }
-  return lang === "en"
-    ? "❌ That answer is not valid. Please try again."
-    : "❌ መልሱ ትክክል አይደለም። እባክዎ እንደገና ይሞክሩ።";
+  if (q.input_type === "phone") return lang === "en" ? "⚠️ That phone number is not valid. Example: 0912345678" : "⚠️ የስልክ ቁጥሩ ትክክል አይደለም። ለምሳሌ፦ 0912345678";
+  if (q.input_type === "ethiopian_date") return lang === "en" ? `⚠️ Please use the Ethiopian calendar in DD/MM/YYYY format (year 1950–${currentEthiopianYear()}).` : `⚠️ እባክዎ ቀኑን በኢትዮጵያ አቆጣጠር በቅርጸት ቀን/ወር/ዓመት ያስገቡ (ዓመት ከ1950 እስከ ${currentEthiopianYear()})።`;
+  if (q.input_type === "ethiopian_year") return lang === "en" ? `⚠️ Please enter an Ethiopian calendar year between 1950 and ${currentEthiopianYear()}.` : `⚠️ እባክዎ የትውልድ ዘመኑን በኢትዮጵያ አቆጣጠር ያስገቡ (ከ1950 እስከ ${currentEthiopianYear()})።`;
+  if (q.exact_words != null) return lang === "en" ? `❌ Please enter exactly ${q.exact_words} words.` : `❌ እባክዎ በ${q.exact_words} ቃላት ብቻ ያስገቡ።`;
+  return lang === "en" ? "❌ That answer is not valid. Please try again." : "❌ መልሱ ትክክል አይደለም። እባክዎ እንደገና ይሞክሩ።";
 }
 
-/**
- * Validates a text answer for a question and returns the normalised value,
- * or null when it fails.
- */
-export function validateAnswer(
-  q: QuestionConfig,
-  text: string,
-  lang: Lang,
-): string | null {
+export function validateAnswer(q: QuestionConfig, text: string, lang: Lang): string | null {
   switch (q.input_type) {
-    case "phone":
-      return validatePhone(text);
-    case "ethiopian_date":
-      return validateEthiopianDate(text)?.formatted ?? null;
-    case "ethiopian_year": {
-      const year = validateEthiopianYear(text);
-      return year === null ? null : String(year);
-    }
-    case "options": {
-      const trimmed = text.trim();
-      const hit = q.options.find(
-        (o) =>
-          o.value === trimmed ||
-          o.label_am === trimmed ||
-          o.label_en.toLowerCase() === trimmed.toLowerCase(),
-      );
-      return hit?.value ?? null;
-    }
-    default:
-      return validateText(text, q, lang);
+    case "phone": return validatePhone(text);
+    case "ethiopian_date": return validateEthiopianDate(text)?.formatted ?? null;
+    case "ethiopian_year": { const year = validateEthiopianYear(text); return year === null ? null : String(year); }
+    case "options": { const trimmed = text.trim(); const hit = q.options.find((o) => o.value === trimmed || o.label_am === trimmed || o.label_en.toLowerCase() === trimmed.toLowerCase()); return hit?.value ?? null; }
+    default: return validateText(text, q, lang);
   }
 }

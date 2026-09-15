@@ -1,15 +1,6 @@
-/**
- * Server-only Telegram bot logic for ሰንበት ት/ቤት registration.
- * Bilingual (አማርኛ / English); language preference is stored per Telegram user id.
- * The question flow is driven by the latest PUBLISHED question configuration in
- * the database, so the owner can change questions without a redeploy.
- * The bot token is read from process.env inside functions and is never
- * returned, logged, stored in the database, or exposed to the client.
- */
-
+/** Server-only Telegram registration bot. */
 import { helpMessage } from "@/lib/help-content.server";
 import {
-  currentEthiopianYear,
   ethiopianAge,
   isCoreField,
   label as questionLabel,
@@ -19,18 +10,17 @@ import {
   validateEthiopianDate,
   type QuestionConfig,
 } from "@/lib/question-config";
-import { publishedQuestions } from "@/lib/question-config.server";
+import {
+  publishedQuestionSet,
+  type RegistrationAgeGroup,
+} from "@/lib/question-config.server";
 import { T, asLang, type Lang } from "@/lib/telegram-i18n";
 
 export { validateEthiopianDate };
 
 type TelegramUpdate = {
   update_id?: number;
-  message?: {
-    chat?: { id?: number };
-    from?: { id?: number; username?: string };
-    text?: string;
-  };
+  message?: { chat?: { id?: number }; from?: { id?: number; username?: string }; text?: string };
   callback_query?: {
     id?: string;
     data?: string;
@@ -39,28 +29,19 @@ type TelegramUpdate = {
   };
 };
 
-/** Used only when nothing has been published yet (should not happen). */
-const FALLBACK_QUESTIONS: QuestionConfig[] = [
-  {
-    field_key: "full_name",
-    position: 1,
-    label_am: T.am.questions.full_name,
-    label_en: T.en.questions.full_name,
-    input_type: "text",
-    required: true,
-    amharic_only: true,
-    min_words: null,
-    max_words: null,
-    exact_words: 3,
-    error_am: T.am.errName,
-    error_en: T.en.errName,
-    options: [],
-    is_core: true,
-    active: true,
-  },
+type Answers = Record<string, string | undefined> & {
+  reg_id?: string;
+  _age_group?: RegistrationAgeGroup;
+  _editing_key?: string;
+};
+
+const AGE_GROUPS: { value: RegistrationAgeGroup; am: string; en: string }[] = [
+  { value: "7_13", am: "7–13", en: "7–13" },
+  { value: "14_17", am: "14–17", en: "14–17" },
+  { value: "18_plus", am: "18+", en: "18+" },
 ];
 
-// ---------- Keyboards ----------
+const FALLBACK_QUESTIONS: QuestionConfig[] = [];
 
 const LANGUAGE_KEYBOARD = {
   inline_keyboard: [
@@ -77,35 +58,30 @@ const startKeyboard = (lang: Lang) => ({
   ],
 });
 
-const helpKeyboard = (
-  lang: Lang,
-  buttons: { text: string; url: string }[] = [],
-) => ({
-  inline_keyboard: [
-    ...buttons.map((b) => [{ text: b.text, url: b.url }]),
-    [{ text: T[lang].btnStart, callback_data: "start_reg" }],
-    [{ text: `⬅️ ${T[lang].btnHome}`, callback_data: "home" }],
-  ],
+const homeKeyboard = (lang: Lang) => ({
+  inline_keyboard: [[{ text: T[lang].btnHome, callback_data: "home" }]],
 });
 
-const optionsKeyboard = (q: QuestionConfig, lang: Lang) => ({
-  inline_keyboard: q.options.map((o, i) => [
-    { text: optionLabel(o, lang), callback_data: `opt_${i}` },
-  ]),
+const ageGroupKeyboard = (lang: Lang) => ({
+  inline_keyboard: AGE_GROUPS.map((g) => [
+    { text: g.en, callback_data: `age_${g.value}` },
+  ]).concat([[{ text: `⬅️ ${T[lang].btnHome}`, callback_data: "home" }]]),
 });
 
 const confirmKeyboard = (lang: Lang) => ({
   inline_keyboard: [
     [{ text: T[lang].btnConfirm, callback_data: "confirm_yes" }],
+    [{ text: "✏️ Edit answers", callback_data: "edit_answers" }],
     [{ text: T[lang].btnCancel, callback_data: "confirm_no" }],
   ],
 });
 
-const homeKeyboard = (lang: Lang) => ({
-  inline_keyboard: [[{ text: T[lang].btnHome, callback_data: "home" }]],
+const registerAnotherKeyboard = (lang: Lang) => ({
+  inline_keyboard: [
+    [{ text: "➕ Register Another Student", callback_data: "register_another" }],
+    [{ text: `🏠 ${T[lang].btnHome}`, callback_data: "home" }],
+  ],
 });
-
-// ---------- Telegram API ----------
 
 async function telegram(method: string, body: unknown) {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
@@ -115,62 +91,38 @@ async function telegram(method: string, body: unknown) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    // Never include the token or personal data in logs.
-    console.error(`Telegram API ${method} failed with status ${res.status}`);
-  }
+  if (!res.ok) console.error(`Telegram API ${method} failed with status ${res.status}`);
   return res;
 }
 
 async function sendMessage(chatId: number, text: string, keyboard?: unknown) {
-  await telegram("sendMessage", {
-    chat_id: chatId,
-    text,
-    ...(keyboard ? { reply_markup: keyboard } : {}),
-  });
+  await telegram("sendMessage", { chat_id: chatId, text, ...(keyboard ? { reply_markup: keyboard } : {}) });
 }
 
-/**
- * Notifies every active Telegram admin (owner + admins) about a new
- * registration, plus the configured fallback admin chat. Chat ids are
- * de-duplicated so nobody receives the same alert twice.
- */
 async function notifyAdmins(lines: string[]) {
   const text = lines.join("\n");
   const targets = new Set<string>();
-
   const fallback = process.env["TELEGRAM_ADMIN_CHAT_ID"];
   if (fallback) targets.add(String(fallback).trim());
-
   try {
-    const { supabaseAdmin } = await import(
-      "@/integrations/supabase/client.server"
-    );
-    const { data } = await supabaseAdmin
-      .from("bot_admins")
-      .select("telegram_chat_id")
-      .eq("active", true);
-    for (const row of data ?? []) {
-      if (row.telegram_chat_id) targets.add(String(row.telegram_chat_id));
-    }
-  } catch {
-    console.error("Admin list could not be loaded for notifications");
-  }
-
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin.from("bot_admins").select("telegram_chat_id").eq("active", true);
+    for (const row of data ?? []) if (row.telegram_chat_id) targets.add(String(row.telegram_chat_id));
+  } catch { console.error("Admin list could not be loaded for notifications"); }
   for (const chatId of targets) {
-    try {
-      await telegram("sendMessage", { chat_id: chatId, text });
-    } catch {
-      console.error("Admin notification could not be delivered");
-    }
+    try { await telegram("sendMessage", { chat_id: chatId, text }); } catch { console.error("Admin notification could not be delivered"); }
   }
 }
 
-// ---------- Session helpers ----------
+function groupLabel(group: RegistrationAgeGroup, lang: Lang) {
+  const hit = AGE_GROUPS.find((g) => g.value === group);
+  return lang === "am" ? hit?.am ?? group : hit?.en ?? group;
+}
 
-type Answers = Record<string, string | undefined> & { reg_id?: string };
+function questionGroup(q: QuestionConfig): string {
+  return String((q as QuestionConfig & { age_group?: string }).age_group ?? "all");
+}
 
-/** Short one-line label for the confirmation summary. */
 function shortLabel(q: QuestionConfig, lang: Lang): string {
   const first = questionLabel(q, lang).split("\n")[0] ?? q.field_key;
   return first.replace(/^[\d\u0030-\u0039\uFE0F\u20E3\s.]+/u, "").trim() || q.field_key;
@@ -185,362 +137,269 @@ function displayValue(q: QuestionConfig, value: string | undefined, lang: Lang) 
   return value;
 }
 
-function summary(
-  questions: QuestionConfig[],
-  a: Answers,
-  lang: Lang,
-): string {
-  const t = T[lang];
+function applicableQuestions(all: QuestionConfig[], group: RegistrationAgeGroup) {
+  return all.filter((q) => {
+    const g = questionGroup(q);
+    return g === "all" || g === group;
+  }).sort((a, b) => a.position - b.position);
+}
+
+function summary(questions: QuestionConfig[], answers: Answers, lang: Lang) {
   return [
-    t.summaryTitle,
+    lang === "am" ? "📋 የምዝገባ ማረጋገጫ" : "📋 Review Student Registration",
     "",
-    `${t.labels.regId}: ${a.reg_id ?? "-"}`,
+    `${lang === "am" ? "የዕድሜ ቡድን" : "Age Group"}: ${groupLabel(answers._age_group!, lang)}`,
+    ...(answers.reg_id ? [`${T[lang].labels.regId}: ${answers.reg_id}`] : []),
     "",
-    ...questions.map(
-      (q) => `${shortLabel(q, lang)}: ${displayValue(q, a[q.field_key], lang)}`,
-    ),
+    ...questions.map((q) => `${shortLabel(q, lang)}: ${displayValue(q, answers[q.field_key], lang)}`),
     "",
-    t.summaryQuestion,
+    lang === "am" ? "እባክዎ መረጃውን ያረጋግጡ።" : "Please check all information before submitting.",
   ].join("\n");
 }
 
-// ---------- Update handling ----------
+async function ageMismatchMessage(chatId: number, lang: Lang, age: number, group: RegistrationAgeGroup) {
+  await sendMessage(chatId, lang === "am"
+    ? `⚠️ የዕድሜ ቡድን አልተመጣጠነም።\n\nየተመረጠው ቡድን፦ ${groupLabel(group, lang)}\nየተሰላው ዕድሜ፦ ${age}\n\nእባክዎ የትውልድ ቀኑን ወይም የዕድሜ ቡድኑን ያስተካክሉ።`
+    : `⚠️ Age Group Mismatch.\n\nSelected group: ${groupLabel(group, lang)}\nCalculated age: ${age}\n\nPlease correct the birth date or change the age group.`, {
+      inline_keyboard: [[{ text: "✏️ Edit Birth Date", callback_data: "edit_birth_date_ec" }], [{ text: "🔄 Change Age Group", callback_data: "change_age_group" }]],
+    });
+}
 
 export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-  // Duplicate-delivery protection: Telegram retries failed deliveries.
   if (typeof update.update_id === "number") {
-    const { error } = await supabaseAdmin
-      .from("telegram_updates")
-      .insert({ update_id: update.update_id });
-    if (error) return; // already processed
+    const { error } = await supabaseAdmin.from("telegram_updates").insert({ update_id: update.update_id });
+    if (error) return;
   }
 
   const cb = update.callback_query;
   const msg = update.message;
-
   const userId = cb?.from?.id ?? msg?.from?.id;
   const chatId = cb?.message?.chat?.id ?? msg?.chat?.id;
   const username = cb?.from?.username ?? msg?.from?.username ?? null;
   if (!userId || !chatId) return;
-
-  if (cb?.id) {
-    await telegram("answerCallbackQuery", { callback_query_id: cb.id });
-  }
+  if (cb?.id) await telegram("answerCallbackQuery", { callback_query_id: cb.id });
 
   const [{ data: session }, { data: pref }, published] = await Promise.all([
-    supabaseAdmin
-      .from("registration_sessions")
-      .select("step, answers")
-      .eq("telegram_user_id", userId)
-      .maybeSingle(),
-    supabaseAdmin
-      .from("bot_user_prefs")
-      .select("lang")
-      .eq("telegram_user_id", userId)
-      .maybeSingle(),
-    publishedQuestions(),
+    supabaseAdmin.from("registration_sessions").select("step, answers, updated_at, age_group, question_version").eq("telegram_user_id", userId).maybeSingle(),
+    supabaseAdmin.from("bot_user_prefs").select("lang").eq("telegram_user_id", userId).maybeSingle(),
+    publishedQuestionSet(),
   ]);
-
-  const questions = published.length ? published : FALLBACK_QUESTIONS;
-  const findQuestion = (key: string) =>
-    questions.find((q) => q.field_key === key);
 
   let lang: Lang = asLang(pref?.lang);
   const knownLanguage = !!pref;
-  const answers: Answers = (session?.answers as Answers | null) ?? {};
-  const step = (session?.step as string | undefined) ?? "idle";
+  const allQuestions = published.questions.length ? published.questions : FALLBACK_QUESTIONS;
+  let answers: Answers = (session?.answers as Answers | null) ?? {};
+  let step = String(session?.step ?? "idle");
 
+  if (session?.updated_at && Date.now() - new Date(session.updated_at).getTime() > 24 * 60 * 60 * 1000) {
+    await supabaseAdmin.from("registration_sessions").delete().eq("telegram_user_id", userId);
+    answers = {};
+    step = "idle";
+  }
+
+  const clearSession = async () => { await supabaseAdmin.from("registration_sessions").delete().eq("telegram_user_id", userId); };
+  const saveSession = async (nextStep: string, nextAnswers: Answers, group?: RegistrationAgeGroup, version?: number) => {
+    await supabaseAdmin.from("registration_sessions").upsert({
+      telegram_user_id: userId,
+      telegram_chat_id: chatId,
+      telegram_username: username,
+      step: nextStep,
+      answers: nextAnswers,
+      age_group: group ?? nextAnswers._age_group ?? null,
+      question_version: version ?? published.version,
+    } as never, { onConflict: "telegram_user_id" });
+  };
   const saveLanguage = async (next: Lang) => {
     lang = next;
-    await supabaseAdmin
-      .from("bot_user_prefs")
-      .upsert(
-        { telegram_user_id: userId, lang: next },
-        { onConflict: "telegram_user_id" },
-      );
+    await supabaseAdmin.from("bot_user_prefs").upsert({ telegram_user_id: userId, lang: next }, { onConflict: "telegram_user_id" });
   };
 
-  const saveSession = async (nextStep: string, nextAnswers: Answers) => {
-    await supabaseAdmin.from("registration_sessions").upsert(
-      {
-        telegram_user_id: userId,
-        telegram_chat_id: chatId,
-        telegram_username: username,
-        step: nextStep,
-        answers: nextAnswers,
-      },
-      { onConflict: "telegram_user_id" },
-    );
-  };
+  const currentGroup = answers._age_group as RegistrationAgeGroup | undefined;
+  const questions = currentGroup ? applicableQuestions(allQuestions, currentGroup) : [];
+  const findQuestion = (key: string) => questions.find((q) => q.field_key === key);
 
-  const clearSession = async () => {
-    await supabaseAdmin
-      .from("registration_sessions")
-      .delete()
-      .eq("telegram_user_id", userId);
+  const editKeyboard = {
+    inline_keyboard: questions.map((q) => [{ text: shortLabel(q, lang), callback_data: `edit_${q.field_key}` }]).concat([[{ text: "⬅️ Back to Review", callback_data: "back_review" }]]),
   };
 
   const askQuestion = async (q: QuestionConfig) => {
+    const controls = [[{ text: "⬅️ Back", callback_data: "back_question" }]];
+    if (!q.required) controls.unshift([{ text: "⏭️ Skip", callback_data: "skip_question" }]);
     if (q.input_type === "options" && q.options.length) {
-      await sendMessage(chatId, questionLabel(q, lang), optionsKeyboard(q, lang));
-    } else {
-      await sendMessage(chatId, questionLabel(q, lang));
-    }
+      await sendMessage(chatId, questionLabel(q, lang), { inline_keyboard: [...q.options.map((o, i) => [{ text: optionLabel(o, lang), callback_data: `opt_${i}` }]), ...controls] });
+    } else await sendMessage(chatId, questionLabel(q, lang), { inline_keyboard: controls });
   };
 
-  /** Reserves the FKN id, saves the session and sends the summary. */
   const goToConfirm = async (nextAnswers: Answers) => {
     let regId = nextAnswers.reg_id;
     if (!regId) {
       const { data } = await supabaseAdmin.rpc("reserve_registration_id");
       regId = (data as string | null) ?? undefined;
     }
-    const withId: Answers = { ...nextAnswers, ...(regId ? { reg_id: regId } : {}) };
-    await saveSession("confirm", withId);
+    const withId = { ...nextAnswers, ...(regId ? { reg_id: regId } : {}) };
+    await saveSession("confirm", withId, currentGroup, published.version);
     await sendMessage(chatId, summary(questions, withId, lang), confirmKeyboard(lang));
   };
 
-  /** Moves to the question after `currentKey` (or the summary when done). */
-  const advance = async (currentKey: string, nextAnswers: Answers) => {
-    const index = questions.findIndex((q) => q.field_key === currentKey);
-    const next = questions[index + 1];
-    if (!next) {
-      await goToConfirm(nextAnswers);
+  const goNext = async (currentKey: string, nextAnswers: Answers) => {
+    if (nextAnswers._editing_key) {
+      const cleaned = { ...nextAnswers };
+      delete cleaned._editing_key;
+      await saveSession("confirm", cleaned, currentGroup, published.version);
+      await sendMessage(chatId, summary(questions, cleaned, lang), confirmKeyboard(lang));
       return;
     }
-    await saveSession(next.field_key, nextAnswers);
+    const index = questions.findIndex((q) => q.field_key === currentKey);
+    const next = questions[index + 1];
+    if (!next) return goToConfirm(nextAnswers);
+    await saveSession(next.field_key, nextAnswers, currentGroup, published.version);
     await askQuestion(next);
   };
 
-  // --- Language selection ---
-  if (cb?.data === "lang_am" || cb?.data === "lang_en") {
-    await saveLanguage(cb.data === "lang_en" ? "en" : "am");
-    await sendMessage(chatId, T[lang].languageSet);
-    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
-    return;
-  }
+  if (cb?.data === "lang_am" || cb?.data === "lang_en") { await saveLanguage(cb.data === "lang_en" ? "en" : "am"); await sendMessage(chatId, T[lang].languageSet); await sendMessage(chatId, T[lang].welcome, startKeyboard(lang)); return; }
+  if (cb?.data === "language") { await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD); return; }
 
-  if (cb?.data === "language") {
-    await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD);
-    return;
-  }
-
-  // --- Button presses ---
   if (cb?.data === "start_reg") {
-    const first = questions[0];
-    if (!first) {
-      await sendMessage(chatId, T[lang].saveFailed);
-      return;
-    }
-    await saveSession(first.field_key, {});
-    await askQuestion(first);
+    if (session && step !== "idle") { await sendMessage(chatId, lang === "am" ? "አልተጠናቀቀ ምዝገባ አለዎት።" : "You have an unfinished registration.", { inline_keyboard: [[{ text: "▶️ Continue", callback_data: "continue_reg" }], [{ text: "🗑️ Discard & Start New", callback_data: "discard_new" }]] }); return; }
+    await sendMessage(chatId, lang === "am" ? "የተማሪውን የዕድሜ ቡድን ይምረጡ።" : "Please select the student's age group.", ageGroupKeyboard(lang));
+    return;
+  }
+  if (cb?.data === "register_another" || cb?.data === "discard_new") { await clearSession(); await sendMessage(chatId, lang === "am" ? "የተማሪውን የዕድሜ ቡድን ይምረጡ።" : "Please select the student's age group.", ageGroupKeyboard(lang)); return; }
+  if (cb?.data === "continue_reg") {
+    if (step === "confirm") { await sendMessage(chatId, summary(questions, answers, lang), confirmKeyboard(lang)); return; }
+    const q = findQuestion(step);
+    if (q) { await askQuestion(q); return; }
+    await sendMessage(chatId, lang === "am" ? "የዕድሜ ቡድን ይምረጡ።" : "Select the age group.", ageGroupKeyboard(lang));
+    return;
+  }
+  if (cb?.data === "change_age_group") { await saveSession("age_group", answers, undefined, published.version); await sendMessage(chatId, lang === "am" ? "አዲሱን የዕድሜ ቡድን ይምረጡ።" : "Select the correct age group.", ageGroupKeyboard(lang)); return; }
+
+  if (cb?.data?.startsWith("age_")) {
+    const group = cb.data.slice(4) as RegistrationAgeGroup;
+    if (!AGE_GROUPS.some((g) => g.value === group)) return;
+    const filtered = applicableQuestions(allQuestions, group);
+    const next = filtered[0];
+    if (!next) { await sendMessage(chatId, lang === "am" ? "የምዝገባ ጥያቄዎች አልተዘጋጁም።" : "No registration questions are published yet."); return; }
+    const nextAnswers: Answers = { _age_group: group };
+    await saveSession(next.field_key, nextAnswers, group, published.version);
+    await sendMessage(chatId, `${lang === "am" ? "የተመረጠው ቡድን" : "Selected age group"}: ${groupLabel(group, lang)}`);
+    await askQuestion(next);
     return;
   }
 
-  if (cb?.data === "help") {
-    const help = await helpMessage(lang);
-    await sendMessage(chatId, help.text, helpKeyboard(lang, help.buttons));
+  if (cb?.data === "help") { const help = await helpMessage(lang); await sendMessage(chatId, help.text, homeKeyboard(lang)); return; }
+  if (cb?.data === "home") { await clearSession(); await sendMessage(chatId, T[lang].welcome, startKeyboard(lang)); return; }
+  if (cb?.data === "confirm_no") { await clearSession(); await sendMessage(chatId, T[lang].cancelled); await sendMessage(chatId, T[lang].welcome, startKeyboard(lang)); return; }
+  if (cb?.data === "edit_answers") { await saveSession("edit", answers, currentGroup, published.version); await sendMessage(chatId, lang === "am" ? "የትኛውን መልስ ማስተካከል ይፈልጋሉ?" : "Which answer would you like to edit?", editKeyboard); return; }
+  if (cb?.data === "back_review") { await saveSession("confirm", answers, currentGroup, published.version); await sendMessage(chatId, summary(questions, answers, lang), confirmKeyboard(lang)); return; }
+  if (cb?.data?.startsWith("edit_")) {
+    const key = cb.data.slice(5);
+    const q = findQuestion(key);
+    if (!q) return;
+    const nextAnswers = { ...answers, _editing_key: key };
+    await saveSession(key, nextAnswers, currentGroup, published.version);
+    await askQuestion(q);
     return;
   }
-
-  if (cb?.data === "home") {
-    await clearSession();
-    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
+  if (cb?.data === "edit_birth_date_ec") {
+    const q = findQuestion("birth_date_ec");
+    if (q) { const nextAnswers = { ...answers, _editing_key: "birth_date_ec" }; await saveSession("birth_date_ec", nextAnswers, currentGroup, published.version); await askQuestion(q); }
     return;
   }
-
-  // Option buttons (gender and any owner-created choice question).
-  // `gender_male` / `gender_female` keep older in-flight sessions working.
-  if (cb?.data?.startsWith("opt_") || cb?.data?.startsWith("gender_")) {
+  if (cb?.data === "back_question") {
     const current = findQuestion(step);
-    if (!current || current.input_type !== "options") {
-      await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
-      return;
-    }
-    const index = cb.data.startsWith("opt_")
-      ? Number(cb.data.slice(4))
-      : cb.data === "gender_male"
-        ? 0
-        : 1;
-    const option = current.options[index];
-    if (!option) {
-      await askQuestion(current);
-      return;
-    }
-    await advance(current.field_key, {
-      ...answers,
-      [current.field_key]: option.value,
-    });
+    if (!current) return;
+    const index = questions.findIndex((q) => q.field_key === current.field_key);
+    if (index <= 0) { await sendMessage(chatId, lang === "am" ? "የዕድሜ ቡድን ይምረጡ።" : "Select the age group.", ageGroupKeyboard(lang)); return; }
+    const previous = questions[index - 1];
+    await saveSession(previous.field_key, answers, currentGroup, published.version);
+    await askQuestion(previous);
     return;
   }
-
-  if (cb?.data === "confirm_no") {
-    await clearSession();
-    await sendMessage(chatId, T[lang].cancelled);
-    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
+  if (cb?.data === "skip_question") {
+    const current = findQuestion(step);
+    if (!current || current.required) return;
+    await goNext(current.field_key, { ...answers, [current.field_key]: "" });
+    return;
+  }
+  if (cb?.data?.startsWith("opt_")) {
+    const current = findQuestion(step);
+    if (!current || current.input_type !== "options") return;
+    const option = current.options[Number(cb.data.slice(4))];
+    if (!option) return;
+    await goNext(current.field_key, { ...answers, [current.field_key]: option.value });
     return;
   }
 
   if (cb?.data === "confirm_yes") {
-    if (step !== "confirm") {
-      await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
-      return;
-    }
+    if (step !== "confirm" || !currentGroup) return;
+    const birth = validateEthiopianDate(answers["birth_date_ec"] ?? "");
+    if (!birth) { const q = questions.find((x) => x.field_key === "birth_date_ec"); if (q) await sendMessage(chatId, questionError(q, lang), { inline_keyboard: [[{ text: "✏️ Edit Birth Date", callback_data: "edit_birth_date_ec" }]] }); return; }
+    const age = ethiopianAge(birth.year, birth.month);
+    const validGroup = age !== null && ((currentGroup === "7_13" && age >= 7 && age <= 13) || (currentGroup === "14_17" && age >= 14 && age <= 17) || (currentGroup === "18_plus" && age >= 18));
+    if (!validGroup) { await ageMismatchMessage(chatId, lang, age ?? -1, currentGroup); return; }
 
-    // Column-backed answers go to their columns; owner-added questions are
-    // stored in extra_answers so existing records/columns never change.
     const extras: Record<string, string> = {};
-    for (const q of questions) {
-      const value = answers[q.field_key];
-      if (!isCoreField(q.field_key) && value) extras[q.field_key] = value;
-    }
-
-    const rawDate = answers["birth_date_ec"] ?? "";
-    const date = validateEthiopianDate(rawDate);
-    const yearOnly = Number(String(rawDate).replace(/\D/g, "")) || 0;
-
-    const { data: inserted, error } = await supabaseAdmin
-      .from("registrations")
-      .insert({
-        ...(answers.reg_id ? { registration_id: answers.reg_id } : {}),
-        telegram_user_id: userId,
-        telegram_chat_id: chatId,
-        telegram_username: username,
-        full_name: answers["full_name"] ?? "-",
-        christian_name: answers["christian_name"] ?? "-",
-        gender: answers["gender"] ?? "-",
-        birth_date_ec: date?.formatted ?? rawDate,
-        birth_day_ec: date?.day ?? null,
-        birth_month_ec: date?.month ?? null,
-        birth_year_ec: date?.year ?? (yearOnly >= 1900 ? yearOnly : 0),
-        age_years: date ? ethiopianAge(date.year, date.month) : null,
-        mother_name: answers["mother_name"] ?? "-",
-        mother_phone: answers["mother_phone"] ?? "-",
-        father_name: answers["father_name"] ?? "-",
-        father_phone: answers["father_phone"] ?? "-",
-        extra_answers: extras,
-        status: "pending",
-      })
-      .select("registration_id, created_at")
-      .single();
-
-    if (error || !inserted) {
-      console.error("Failed to save registration");
-      await sendMessage(chatId, T[lang].saveFailed);
-      return;
-    }
-
+    for (const q of questions) { const value = answers[q.field_key]; if (!isCoreField(q.field_key) && value) extras[q.field_key] = value; }
+    const payload = {
+      ...(answers.reg_id ? { registration_id: answers.reg_id } : {}),
+      telegram_user_id: userId,
+      telegram_chat_id: chatId,
+      telegram_username: username,
+      age_group: currentGroup,
+      question_version: published.version || null,
+      full_name: answers.full_name ?? "-",
+      christian_name: answers.christian_name ?? "-",
+      gender: answers.gender ?? "-",
+      birth_date_ec: birth.formatted,
+      birth_day_ec: birth.day,
+      birth_month_ec: birth.month,
+      birth_year_ec: birth.year,
+      age_years: age,
+      mother_name: answers.mother_name || "-",
+      mother_phone: answers.mother_phone || "-",
+      father_name: answers.father_name || "-",
+      father_phone: answers.father_phone || "-",
+      extra_answers: extras,
+      status: "pending",
+    };
+    const { data: inserted, error } = await supabaseAdmin.from("registrations").insert(payload as never).select("registration_id, created_at").single();
+    if (error || !inserted) { console.error("Failed to save registration"); await sendMessage(chatId, T[lang].saveFailed); return; }
     await clearSession();
-
-    // 1) Telegram confirmation to the registrant.
     await sendMessage(chatId, T[lang].success(inserted.registration_id));
-    await sendMessage(chatId, T[lang].contacts, homeKeyboard(lang));
-
-    // 2) Admin Telegram notification (failures never affect the saved row).
+    await sendMessage(chatId, lang === "am" ? "የሚቀጥለውን ተማሪ ለመመዝገብ ከታች ይምረጡ።" : "You can now register another student.", registerAnotherKeyboard(lang));
     await notifyAdmins([
       "🆕 አዲስ ምዝገባ / New registration",
       "",
       `🆔 ${inserted.registration_id}`,
-      ...questions.map(
-        (q) => `${shortLabel(q, "am")}: ${displayValue(q, answers[q.field_key], "am")}`,
-      ),
+      `${lang === "am" ? "የዕድሜ ቡድን" : "Age Group"}: ${groupLabel(currentGroup, "am")}`,
+      `${lang === "am" ? "ዕድሜ" : "Age"}: ${age}`,
+      ...questions.map((q) => `${shortLabel(q, "am")}: ${displayValue(q, answers[q.field_key], "am")}`),
     ]);
-
-    // 3) Email confirmation to the school inbox (skipped until email sending is configured).
-    try {
-      const { sendRegistrationEmail } = await import(
-        "@/lib/registration-email.server"
-      );
-      await sendRegistrationEmail({
-        registrationId: inserted.registration_id,
-        fullName: answers["full_name"] ?? "-",
-        christianName: answers["christian_name"] ?? "-",
-        gender: answers["gender"] ?? "-",
-        birthDateEc: date?.formatted ?? rawDate,
-        motherName: answers["mother_name"] ?? "-",
-        motherPhone: answers["mother_phone"] ?? "-",
-        fatherName: answers["father_name"] ?? "-",
-        fatherPhone: answers["father_phone"] ?? "-",
-        createdAt: inserted.created_at,
-      });
-    } catch {
-      // Registration is already saved; email problems must never lose it.
-      console.error("Registration confirmation email could not be sent");
-    }
     return;
   }
 
-  // --- Text messages ---
   const text = (msg?.text ?? "").trim();
   if (!text) return;
-
   if (text.startsWith("/start")) {
-    await clearSession();
-    if (!knownLanguage) {
-      await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD);
-      return;
-    }
-    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
-    return;
+    if (session && step !== "idle") { await sendMessage(chatId, lang === "am" ? "አልተጠናቀቀ ምዝገባ አለዎት።" : "You have an unfinished registration.", { inline_keyboard: [[{ text: "▶️ Continue", callback_data: "continue_reg" }], [{ text: "🗑️ Discard & Start New", callback_data: "discard_new" }]] }); return; }
+    if (!knownLanguage) { await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD); return; }
+    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang)); return;
   }
-
-  if (text.startsWith("/language") || text.startsWith("/lang")) {
-    await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD);
-    return;
-  }
-
-  if (text.startsWith("/help")) {
-    const help = await helpMessage(lang);
-    await sendMessage(chatId, help.text, helpKeyboard(lang, help.buttons));
-    return;
-  }
-
-  // Lets a staff member read their own Telegram id so an owner can add them
-  // as an admin in the dashboard. No other user's data is ever revealed.
-  if (text.startsWith("/id") || text.startsWith("/myid")) {
-    await sendMessage(
-      chatId,
-      `🆔 Telegram ID: ${userId}\n💬 Chat ID: ${chatId}`,
-      homeKeyboard(lang),
-    );
-    return;
-  }
-
-  if (text.startsWith("/cancel")) {
-    await clearSession();
-    await sendMessage(chatId, T[lang].cancelled);
-    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
-    return;
-  }
-
-  if (step === "confirm") {
-    await sendMessage(chatId, summary(questions, answers, lang), confirmKeyboard(lang));
-    return;
-  }
+  if (text.startsWith("/language") || text.startsWith("/lang")) { await sendMessage(chatId, T[lang].chooseLanguage, LANGUAGE_KEYBOARD); return; }
+  if (text.startsWith("/help")) { const help = await helpMessage(lang); await sendMessage(chatId, help.text, homeKeyboard(lang)); return; }
+  if (text.startsWith("/cancel")) { await clearSession(); await sendMessage(chatId, T[lang].cancelled); await sendMessage(chatId, T[lang].welcome, startKeyboard(lang)); return; }
+  if (text.startsWith("/id") || text.startsWith("/myid")) { await sendMessage(chatId, `🆔 Telegram ID: ${userId}\n💬 Chat ID: ${chatId}`, homeKeyboard(lang)); return; }
+  if (step === "confirm") { await sendMessage(chatId, summary(questions, answers, lang), confirmKeyboard(lang)); return; }
+  if (step === "edit") { await sendMessage(chatId, lang === "am" ? "የሚስተካከለውን ጥያቄ ይምረጡ።" : "Choose the answer to edit.", editKeyboard); return; }
 
   const current = findQuestion(step);
-  if (!current) {
-    await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
-    return;
-  }
-
-  if (current.input_type === "options") {
-    await askQuestion(current);
-    return;
-  }
-
-  // Optional questions may be skipped.
-  const skipped =
-    !current.required && /^(-|\/skip|skip|ዝለል)$/i.test(text.trim());
+  if (!current) { await sendMessage(chatId, T[lang].welcome, startKeyboard(lang)); return; }
+  if (current.input_type === "options") { await askQuestion(current); return; }
+  const skipped = !current.required && /^(-|\/skip|skip|ዝለል)$/i.test(text);
   const value = skipped ? "" : validateAnswer(current, text, lang);
-  if (value === null) {
-    await sendMessage(chatId, questionError(current, lang));
-    return;
-  }
-
-  await advance(current.field_key, { ...answers, [current.field_key]: value });
+  if (value === null) { await sendMessage(chatId, questionError(current, lang)); return; }
+  await goNext(current.field_key, { ...answers, [current.field_key]: value });
 }
-
-export { currentEthiopianYear };
