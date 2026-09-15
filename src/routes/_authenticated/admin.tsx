@@ -4,86 +4,32 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AdminSettingsPanel } from "@/components/admin/settings-panel";
 import { QuestionsPanel } from "@/components/admin/questions-panel";
 import { ModulesPanel } from "@/components/admin/modules-panel";
-
 import { LanguageToggle } from "@/components/language-toggle";
 import logoAsset from "@/assets/sunday-school-logo.jpg.asset.json";
-import { supabase } from "@/integrations/supabase/client";
 import { genderLabel, useUiLang } from "@/lib/ui-i18n";
-import {
-  claimFirstAdmin,
-  deleteRegistration,
-  exportRegistrationsCsv,
-  getAdminStatus,
-  listRegistrations,
-  setRegistrationStatus,
-  updateRegistration,
-  type AdminRegistration,
-} from "@/lib/admin.functions";
+import { claimFirstAdmin, getAdminStatus, exportRegistrationsCsv } from "@/lib/admin.functions";
+import { listRegistrationsV2, updateRegistrationV2, setRegistrationStatusV2, archiveRegistrationV2, restoreRegistrationV2, listRegistrationAuditV2, getRegistrationHistoricalQuestionsV2, type AdminRegistrationV2 } from "@/lib/registration-admin.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
-  head: () => ({
-    meta: [
-      { title: "የምዝገባ አስተዳደር | ሰንበት ት/ቤት" },
-      {
-        name: "description",
-        content:
-          "የሰንበት ት/ቤት ተማሪዎች ምዝገባ አስተዳደር ገጽ — ምዝገባዎችን ይመልከቱ፣ ያስተካክሉ እና ያስተዳድሩ።",
-      },
-      { property: "og:title", content: "የምዝገባ አስተዳደር | ሰንበት ት/ቤት" },
-      {
-        property: "og:description",
-        content: "የሰንበት ት/ቤት ተማሪዎች ምዝገባ አስተዳደር ገጽ።",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "የምዝገባ አስተዳደር | ሰንበት ት/ቤት" }] }),
   component: AdminPage,
 });
 
-const STATUS_TONE: Record<string, string> = {
-  pending: "bg-accent/25 text-accent-foreground",
-  approved: "bg-primary/12 text-primary",
-  rejected: "bg-destructive/12 text-destructive",
-};
+const STATUS_TONE: Record<string, string> = { pending: "bg-accent/25 text-accent-foreground", approved: "bg-primary/12 text-primary", rejected: "bg-destructive/12 text-destructive" };
+const GROUP_LABEL: Record<string, string> = { "7_13": "7–13", "14_17": "14–17", "18_plus": "18+" };
+const STATUS_OPTIONS = ["pending", "approved", "rejected"] as const;
+
+type Tab = "registrations" | "modules" | "settings";
 
 function AdminPage() {
   const navigate = useNavigate();
@@ -91,81 +37,60 @@ function AdminPage() {
   const { lang, t } = useUiLang();
   const tt = t.admin;
   const fetchStatus = useServerFn(getAdminStatus);
-  const fetchList = useServerFn(listRegistrations);
   const claim = useServerFn(claimFirstAdmin);
-  const doUpdate = useServerFn(updateRegistration);
-  const doStatus = useServerFn(setRegistrationStatus);
-  const doDelete = useServerFn(deleteRegistration);
-  const doExport = useServerFn(exportRegistrationsCsv);
+  const fetchRegistrations = useServerFn(listRegistrationsV2);
+  const updateRegistration = useServerFn(updateRegistrationV2);
+  const changeStatus = useServerFn(setRegistrationStatusV2);
+  const archive = useServerFn(archiveRegistrationV2);
+  const restore = useServerFn(restoreRegistrationV2);
+  const fetchAudit = useServerFn(listRegistrationAuditV2);
+  const fetchHistory = useServerFn(getRegistrationHistoricalQuestionsV2);
+  const exportCsv = useServerFn(exportRegistrationsCsv);
 
+  const [tab, setTab] = useState<Tab>("registrations");
   const [search, setSearch] = useState("");
-  const [gender, setGender] = useState<"all" | "ወንድ" | "ሴት">("all");
-  const [editing, setEditing] = useState<AdminRegistration | null>(null);
-  const [viewing, setViewing] = useState<AdminRegistration | null>(null);
-  const [deleting, setDeleting] = useState<AdminRegistration | null>(null);
-  const [tab, setTab] = useState<"registrations" | "modules" | "settings">(
-    "registrations",
-  );
+  const [gender, setGender] = useState("all");
+  const [group, setGroup] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [showArchived, setShowArchived] = useState(false);
+  const [editing, setEditing] = useState<AdminRegistrationV2 | null>(null);
+  const [viewing, setViewing] = useState<AdminRegistrationV2 | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<AdminRegistrationV2 | null>(null);
 
-  const statusQuery = useQuery({
-    queryKey: ["admin-status"],
-    queryFn: () => fetchStatus({}),
-  });
-
+  const statusQuery = useQuery({ queryKey: ["admin-status"], queryFn: () => fetchStatus({}) });
   const isAdmin = statusQuery.data?.isAdmin ?? false;
   const isOwner = statusQuery.data?.isOwner ?? false;
-
-  const regQuery = useQuery({
-    queryKey: ["registrations"],
-    queryFn: () => fetchList({}),
-    enabled: isAdmin,
-  });
+  const regQuery = useQuery({ queryKey: ["registrations-v2"], queryFn: () => fetchRegistrations({}), enabled: isAdmin });
 
   const rows = useMemo(() => {
-    const list = regQuery.data ?? [];
     const q = search.trim().toLowerCase();
-    return list.filter((r) => {
+    return (regQuery.data ?? []).filter((r) => {
+      if (!showArchived && r.archived_at) return false;
+      if (showArchived && !r.archived_at) return false;
       if (gender !== "all" && r.gender !== gender) return false;
+      if (group !== "all" && r.age_group !== group) return false;
+      if (status !== "all" && r.status !== status) return false;
       if (!q) return true;
-      return [
-        r.full_name,
-        r.christian_name,
-        r.registration_id,
-        r.mother_phone,
-        r.father_phone,
-      ].some((v) => v.toLowerCase().includes(q));
+      return [r.full_name, r.christian_name, r.registration_id, r.mother_phone, r.father_phone].some((v) => String(v ?? "").toLowerCase().includes(q));
     });
-  }, [regQuery.data, search, gender]);
+  }, [regQuery.data, search, gender, group, status, showArchived]);
 
   const stats = useMemo(() => {
-    const list = regQuery.data ?? [];
-    const now = new Date();
-    const startOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const startOfWeek = new Date(startOfDay);
-    startOfWeek.setDate(startOfDay.getDate() - startOfDay.getDay());
+    const active = (regQuery.data ?? []).filter((r) => !r.archived_at);
     return {
-      total: list.length,
-      pending: list.filter((r) => r.status === "pending").length,
-      approved: list.filter((r) => r.status === "approved").length,
-      rejected: list.filter((r) => r.status === "rejected").length,
-      today: list.filter((r) => new Date(r.created_at) >= startOfDay).length,
-      week: list.filter((r) => new Date(r.created_at) >= startOfWeek).length,
+      total: active.length,
+      pending: active.filter((r) => r.status === "pending").length,
+      approved: active.filter((r) => r.status === "approved").length,
+      rejected: active.filter((r) => r.status === "rejected").length,
+      today: active.filter((r) => new Date(r.created_at).toDateString() === new Date().toDateString()).length,
     };
   }, [regQuery.data]);
 
-  const refresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["registrations"] });
-  };
-
-  const statusOptions = ["pending", "approved", "rejected"] as const;
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["registrations-v2"] });
 
   const onExport = async () => {
     try {
-      const result = await doExport({});
+      const result = await exportCsv({});
       const blob = new Blob([result.csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -174,271 +99,46 @@ function AdminPage() {
       a.click();
       URL.revokeObjectURL(url);
       toast.success(tt.exportDone);
-    } catch {
-      toast.error(tt.exportFailed);
-    }
+    } catch { toast.error(tt.exportFailed); }
   };
 
-  if (statusQuery.isLoading) {
-    return <div className="p-6 text-muted-foreground">{tt.loading}</div>;
-  }
+  if (statusQuery.isLoading) return <div className="p-6 text-muted-foreground">{tt.loading}</div>;
+  if (!isAdmin) return <div className="min-h-screen bg-background"><header className="border-b border-border bg-card/80"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4"><div className="flex items-center gap-3"><img src={logoAsset.src} alt="Sunday School" className="h-10 w-10 rounded-full object-cover" /><div><h1 className="font-semibold">{t.brand}</h1><p className="text-xs text-muted-foreground">{tt.ownerOnly}</p></div></div><LanguageToggle /></div></header><main className="mx-auto max-w-xl px-4 py-16 text-center">{statusQuery.data?.adminCount === 0 ? <><h2 className="text-2xl font-bold">{tt.ownerOnly}</h2><p className="mt-3 text-muted-foreground">{tt.empty}</p><Button className="mt-6" onClick={async () => { try { await claim({}); await statusQuery.refetch(); } catch { toast.error(tt.saveFailed); } }}>{tt.save}</Button></> : <p className="text-muted-foreground">{tt.ownerOnly}</p>}</main></div>;
 
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-background">
-        <header className="border-b border-border bg-card/80 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-            <div className="flex items-center gap-3">
-              <img src={logoAsset.src} alt="Sunday School" className="h-10 w-10 rounded-full object-cover" />
-              <div>
-                <h1 className="font-semibold">{t.brand}</h1>
-                <p className="text-xs text-muted-foreground">{tt.ownerOnly}</p>
-              </div>
-            </div>
-            <LanguageToggle />
-          </div>
-        </header>
-        <main className="mx-auto max-w-xl px-4 py-16 text-center">
-          {statusQuery.data?.adminCount === 0 ? (
-            <>
-              <h2 className="text-2xl font-bold">{tt.ownerOnly}</h2>
-              <p className="mt-3 text-muted-foreground">{tt.empty}</p>
-              <Button className="mt-6" onClick={async () => { try { await claim({}); await statusQuery.refetch(); } catch { toast.error(tt.saveFailed); } }}>
-                {tt.save}
-              </Button>
-            </>
-          ) : (
-            <p className="text-muted-foreground">{tt.ownerOnly}</p>
-          )}
-        </main>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <img src={logoAsset.src} alt="Sunday School" className="h-10 w-10 rounded-full object-cover" />
-            <div>
-              <h1 className="font-semibold">{t.brand}</h1>
-              <p className="text-xs text-muted-foreground">{tt.detailsTitle}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <LanguageToggle />
-            <Button variant="outline" onClick={() => navigate({ to: "/" })}>Home</Button>
-          </div>
+  return <div className="min-h-screen bg-background">
+    <header className="border-b border-border bg-card/80 backdrop-blur"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4"><div className="flex items-center gap-3"><img src={logoAsset.src} alt="Sunday School" className="h-10 w-10 rounded-full object-cover" /><div><h1 className="font-semibold">{t.brand}</h1><p className="text-xs text-muted-foreground">{tt.detailsTitle}</p></div></div><div className="flex gap-2"><LanguageToggle /><Button variant="outline" onClick={() => navigate({ to: "/" })}>Home</Button></div></div></header>
+    <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+      <div className="flex flex-wrap gap-2 border-b border-border pb-3"><Button variant={tab === "registrations" ? "default" : "outline"} onClick={() => setTab("registrations")}>{tt.tabRegistrations}</Button><Button variant={tab === "modules" ? "default" : "outline"} onClick={() => setTab("modules")}>Modules</Button><Button variant={tab === "settings" ? "default" : "outline"} onClick={() => setTab("settings")}>{tt.tabSettings}</Button></div>
+      {tab === "modules" ? <ModulesPanel /> : tab === "settings" ? <><QuestionsPanel /><AdminSettingsPanel /></> : <>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{[["Total", stats.total], ["Pending", stats.pending], ["Approved", stats.approved], ["Rejected", stats.rejected], ["Today", stats.today]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-border bg-card p-4"><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 text-2xl font-bold">{value}</div></div>)}</div>
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 lg:flex-row lg:items-center">
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, registration ID, phone" className="lg:max-w-sm" />
+          <Select value={group} onValueChange={setGroup}><SelectTrigger className="w-full lg:w-36"><SelectValue placeholder="Age group" /></SelectTrigger><SelectContent><SelectItem value="all">All groups</SelectItem><SelectItem value="7_13">7–13</SelectItem><SelectItem value="14_17">14–17</SelectItem><SelectItem value="18_plus">18+</SelectItem></SelectContent></Select>
+          <Select value={gender} onValueChange={setGender}><SelectTrigger className="w-full lg:w-32"><SelectValue placeholder="Gender" /></SelectTrigger><SelectContent><SelectItem value="all">All genders</SelectItem><SelectItem value="ወንድ">{genderLabel("ወንድ", lang)}</SelectItem><SelectItem value="ሴት">{genderLabel("ሴት", lang)}</SelectItem></SelectContent></Select>
+          <Select value={status} onValueChange={setStatus}><SelectTrigger className="w-full lg:w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All status</SelectItem>{STATUS_OPTIONS.map((v) => <SelectItem key={v} value={v}>{tt.status[v]}</SelectItem>)}</SelectContent></Select>
+          <Button variant={showArchived ? "default" : "outline"} onClick={() => setShowArchived((v) => !v)}>{showArchived ? "Showing archived" : "Show archived"}</Button>
+          <Button variant="outline" onClick={() => refresh()}>{tt.refresh}</Button>{isOwner && <Button onClick={onExport}>{tt.exportCsv}</Button>}
         </div>
-      </header>
+        <div className="overflow-x-auto rounded-xl border border-border bg-card"><Table><TableHeader><TableRow><TableHead>Registration ID</TableHead><TableHead>Student</TableHead><TableHead>Christian Name</TableHead><TableHead>Age Group</TableHead><TableHead>Age</TableHead><TableHead>Gender</TableHead><TableHead>Birth Date</TableHead><TableHead>Version</TableHead><TableHead>Status</TableHead><TableHead>Registered</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader><TableBody>{regQuery.isLoading ? <TableRow><TableCell colSpan={11}>{tt.loading}</TableCell></TableRow> : rows.length === 0 ? <TableRow><TableCell colSpan={11} className="py-10 text-center text-muted-foreground">{tt.empty}</TableCell></TableRow> : rows.map((r) => <TableRow key={r.id}><TableCell className="font-semibold text-primary">{r.registration_id}</TableCell><TableCell>{r.full_name}</TableCell><TableCell>{r.christian_name}</TableCell><TableCell>{r.age_group ? GROUP_LABEL[r.age_group] : "—"}</TableCell><TableCell>{r.age_years ?? "—"}</TableCell><TableCell>{genderLabel(r.gender, lang)}</TableCell><TableCell>{r.birth_date_ec ?? r.birth_year_ec}</TableCell><TableCell>{r.question_version ?? "—"}</TableCell><TableCell><Select value={r.status} onValueChange={async (value) => { try { await changeStatus({ data: { id: r.id, status: value as typeof STATUS_OPTIONS[number] } }); await refresh(); toast.success(tt.statusChanged); } catch { toast.error(tt.statusFailed); } }}><SelectTrigger className={`w-32 rounded-full border-0 text-xs font-semibold ${STATUS_TONE[r.status] ?? ""}`}><SelectValue /></SelectTrigger><SelectContent>{STATUS_OPTIONS.map((v) => <SelectItem key={v} value={v}>{tt.status[v]}</SelectItem>)}</SelectContent></Select></TableCell><TableCell className="whitespace-nowrap">{new Date(r.created_at).toLocaleDateString()}</TableCell><TableCell><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setViewing(r)}>View</Button>{!r.archived_at ? <><Button size="sm" onClick={() => setEditing(r)}>Edit</Button><Button size="sm" variant="destructive" onClick={() => setArchiveTarget(r)}>Archive</Button></> : <Button size="sm" onClick={async () => { try { await restore({ data: { id: r.id } }); await refresh(); toast.success("Registration restored"); } catch { toast.error("Could not restore registration"); } }}>Restore</Button>}</div></TableCell></TableRow>)}</TableBody></Table></div>
+        <p className="text-sm text-muted-foreground">Showing {rows.length} of {(regQuery.data ?? []).filter((r) => showArchived ? !!r.archived_at : !r.archived_at).length} registrations</p>
+      </>}
+    </main>
 
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
-        <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-          <Button variant={tab === "registrations" ? "default" : "outline"} onClick={() => setTab("registrations")}>{tt.tabRegistrations}</Button>
-          <Button variant={tab === "modules" ? "default" : "outline"} onClick={() => setTab("modules")}>Modules</Button>
-          <Button variant={tab === "settings" ? "default" : "outline"} onClick={() => setTab("settings")}>{tt.tabSettings}</Button>
-        </div>
+    <RegistrationViewDialog viewing={viewing} onClose={() => setViewing(null)} fetchHistory={fetchHistory} fetchAudit={fetchAudit} />
+    <EditDialog editing={editing} onClose={() => setEditing(null)} onSave={async (data) => { try { await updateRegistration({ data }); setEditing(null); await refresh(); toast.success(tt.saved); } catch (e) { toast.error(e instanceof Error ? e.message : tt.saveFailed); } }} />
+    <AlertDialog open={!!archiveTarget} onOpenChange={(open) => !open && setArchiveTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Archive registration?</AlertDialogTitle><AlertDialogDescription>{archiveTarget ? `This will hide ${archiveTarget.full_name} from the normal registration list. The record will remain recoverable.` : ""}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={async () => { if (!archiveTarget) return; try { await archive({ data: { id: archiveTarget.id } }); setArchiveTarget(null); await refresh(); toast.success("Registration archived"); } catch { toast.error("Could not archive registration"); } }}>Archive</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  </div>;
+}
 
-        {tab === "modules" ? <ModulesPanel /> : tab === "settings" ? <><QuestionsPanel /><AdminSettingsPanel /></> : (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {["total", "pending", "approved", "rejected", "today", "week"].map((key) => (
-                <div key={key} className="rounded-xl border border-border bg-card p-4">
-                  <div className="text-xs text-muted-foreground">{key}</div>
-                  <div className="mt-1 text-2xl font-bold">{stats[key as keyof typeof stats]}</div>
-                </div>
-              ))}
-            </div>
+function RegistrationViewDialog({ viewing, onClose, fetchHistory, fetchAudit }: { viewing: AdminRegistrationV2 | null; onClose: () => void; fetchHistory: ReturnType<typeof useServerFn<typeof getRegistrationHistoricalQuestionsV2>>; fetchAudit: ReturnType<typeof useServerFn<typeof listRegistrationAuditV2>> }) {
+  const history = useQuery({ queryKey: ["registration-history", viewing?.id], queryFn: () => fetchHistory({ data: { registration_id: viewing!.id } }), enabled: !!viewing });
+  const audit = useQuery({ queryKey: ["registration-audit", viewing?.id], queryFn: () => fetchAudit({ data: { registration_id: viewing!.id } }), enabled: !!viewing });
+  return <Dialog open={!!viewing} onOpenChange={(o) => !o && onClose()}><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>Registration details</DialogTitle></DialogHeader>{viewing && <div className="space-y-6"><div className="grid gap-3 sm:grid-cols-2">{[["Registration ID", viewing.registration_id], ["Student", viewing.full_name], ["Christian Name", viewing.christian_name], ["Age Group", viewing.age_group ? GROUP_LABEL[viewing.age_group] : "—"], ["Calculated Age", viewing.age_years ?? "—"], ["Gender", viewing.gender], ["Ethiopian Birth Date", viewing.birth_date_ec ?? viewing.birth_year_ec], ["Question Version", viewing.question_version ?? "—"], ["Status", viewing.status], ["Registered", new Date(viewing.created_at).toLocaleString()]].map(([k, v]) => <div key={String(k)} className="rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">{k}</div><div className="mt-1 font-medium">{v}</div></div>)}</div><section><h3 className="mb-3 font-semibold">Historical questions & answers</h3>{history.isLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : history.data?.length ? <div className="space-y-2">{history.data.map((q: any) => <div key={q.field_key} className="rounded-lg border border-border p-3"><div className="font-medium">{q.label_en || q.label_am || q.field_key}</div>{q.label_en && q.label_am && <div className="text-xs text-muted-foreground">{q.label_am}</div>}<div className="mt-1 whitespace-pre-wrap">{q.answer || (q.required ? "No answer" : "-")}</div></div>)}</div> : <p className="text-sm text-muted-foreground">No saved question version is available for this record.</p>}</section><section><h3 className="mb-3 font-semibold">Audit history</h3>{audit.isLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : audit.data?.length ? <div className="space-y-2">{audit.data.map((a: any) => <div key={a.id} className="rounded-lg border border-border p-3"><div className="flex justify-between gap-3"><span className="font-medium">{a.action}</span><span className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</span></div><pre className="mt-2 overflow-x-auto text-xs text-muted-foreground">{JSON.stringify(a.changes, null, 2)}</pre></div>)}</div> : <p className="text-sm text-muted-foreground">No audit history.</p>}</section></div>}</DialogContent></Dialog>;
+}
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-1 gap-2">
-                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search registrations" className="max-w-md" />
-                <Select value={gender} onValueChange={(v) => setGender(v as typeof gender)}>
-                  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="ወንድ">{genderLabel("ወንድ", lang)}</SelectItem>
-                    <SelectItem value="ሴት">{genderLabel("ሴት", lang)}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={refresh}>{tt.refresh}</Button>
-                {isOwner && <Button onClick={onExport}>{tt.exportCsv}</Button>}
-              </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-xl border border-border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{tt.columns.regId}</TableHead>
-                    <TableHead>{tt.columns.fullName}</TableHead>
-                    <TableHead>{tt.columns.christianName}</TableHead>
-                    <TableHead>{tt.columns.gender}</TableHead>
-                    <TableHead>{tt.columns.birthDate}</TableHead>
-                    <TableHead>{tt.columns.age}</TableHead>
-                    <TableHead>{tt.columns.motherName}</TableHead>
-                    <TableHead>{tt.columns.motherPhone}</TableHead>
-                    <TableHead>{tt.columns.fatherName}</TableHead>
-                    <TableHead>{tt.columns.fatherPhone}</TableHead>
-                    <TableHead>{tt.columns.created}</TableHead>
-                    <TableHead>{tt.columns.status}</TableHead>
-                    <TableHead>{tt.columns.actions}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {regQuery.isLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={13}>{tt.loading}</TableCell>
-                    </TableRow>
-                  ) : rows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={13} className="py-10 text-center text-muted-foreground">{tt.empty}</TableCell>
-                    </TableRow>
-                  ) : (
-                    rows.map((r) => (
-                      <TableRow key={r.id} className="hover:bg-muted/40">
-                        <TableCell className="font-semibold text-primary">{r.registration_id}</TableCell>
-                        <TableCell>{r.full_name}</TableCell>
-                        <TableCell>{r.christian_name}</TableCell>
-                        <TableCell>{genderLabel(r.gender, lang)}</TableCell>
-                        <TableCell>{r.birth_date_ec ?? r.birth_year_ec}</TableCell>
-                        <TableCell>{r.age_years ?? "—"}</TableCell>
-                        <TableCell>{r.mother_name}</TableCell>
-                        <TableCell className="whitespace-nowrap">{r.mother_phone}</TableCell>
-                        <TableCell>{r.father_name}</TableCell>
-                        <TableCell className="whitespace-nowrap">{r.father_phone}</TableCell>
-                        <TableCell className="whitespace-nowrap">{new Date(r.created_at).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <Select value={r.status} onValueChange={async (value) => {
-                            try {
-                              await doStatus({ data: { id: r.id, status: value as "pending" } });
-                              toast.success(tt.statusChanged);
-                              await refresh();
-                            } catch { toast.error(tt.statusFailed); }
-                          }}>
-                            <SelectTrigger className={`w-36 rounded-full border-0 text-xs font-semibold ${STATUS_TONE[r.status] ?? ""}`}><SelectValue /></SelectTrigger>
-                            <SelectContent>{statusOptions.map((v) => <SelectItem key={v} value={v}>{tt.status[v]}</SelectItem>)}</SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setViewing(r)}>{tt.view}</Button>
-                            <Button size="sm" onClick={() => setEditing(r)}>{tt.edit}</Button>
-                            <Button size="sm" variant="destructive" onClick={() => setDeleting(r)}>{tt.delete}</Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            <p className="text-sm text-muted-foreground">{tt.showing(rows.length, regQuery.data?.length ?? 0)}</p>
-          </>
-        )}
-      </main>
-
-      {/* Details */}
-      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{tt.detailsTitle}</DialogTitle>
-          </DialogHeader>
-          {viewing ? (
-            <dl className="space-y-2 text-sm">
-              {[
-                [`🆔 ${tt.columns.regId}`, viewing.registration_id],
-                [`👤 ${tt.columns.fullName}`, viewing.full_name],
-                [`✝️ ${tt.columns.christianName}`, viewing.christian_name],
-                [`⚥ ${tt.columns.gender}`, genderLabel(viewing.gender, lang)],
-                [
-                  `🎂 ${tt.columns.birthDate}`,
-                  viewing.birth_date_ec ?? String(viewing.birth_year_ec),
-                ],
-                [`🔢 ${tt.columns.age}`, viewing.age_years ?? "—"],
-                [`👩 ${tt.columns.motherName}`, viewing.mother_name],
-                [`📞 ${tt.columns.motherPhone}`, viewing.mother_phone],
-                [`👨 ${tt.columns.fatherName}`, viewing.father_name],
-                [`📞 ${tt.columns.fatherPhone}`, viewing.father_phone],
-                [
-                  tt.columns.status,
-                  tt.status[viewing.status] ?? viewing.status,
-                ],
-              ].map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-4 border-b border-border/60 pb-2 last:border-0">
-                  <dt className="text-muted-foreground">{k}</dt>
-                  <dd className="font-medium text-right">{v}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit */}
-      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{tt.editTitle}</DialogTitle></DialogHeader>
-          {editing ? (
-            <form className="space-y-3" onSubmit={async (e) => {
-              e.preventDefault();
-              const form = new FormData(e.currentTarget);
-              try {
-                await doUpdate({ data: {
-                  id: editing.id,
-                  full_name: String(form.get("full_name") ?? ""),
-                  christian_name: String(form.get("christian_name") ?? ""),
-                  gender: String(form.get("gender") ?? editing.gender) as "ወንድ" | "ሴት",
-                  birth_date_ec: String(form.get("birth_date_ec") ?? ""),
-                  mother_name: String(form.get("mother_name") ?? ""),
-                  mother_phone: String(form.get("mother_phone") ?? ""),
-                  father_name: String(form.get("father_name") ?? ""),
-                  father_phone: String(form.get("father_phone") ?? ""),
-                  status: editing.status as "pending" | "approved" | "rejected",
-                }});
-                toast.success(tt.saved);
-                setEditing(null);
-                await refresh();
-              } catch { toast.error(tt.saveFailed); }
-            }}>
-              <div><Label htmlFor="full_name">{tt.columns.fullName}</Label><Input id="full_name" name="full_name" defaultValue={editing.full_name} /></div>
-              <div><Label htmlFor="christian_name">{tt.columns.christianName}</Label><Input id="christian_name" name="christian_name" defaultValue={editing.christian_name} /></div>
-              <div><Label htmlFor="birth_date_ec">{tt.columns.birthDate}</Label><Input id="birth_date_ec" name="birth_date_ec" defaultValue={editing.birth_date_ec ?? String(editing.birth_year_ec)} /></div>
-              <div><Label htmlFor="mother_name">{tt.columns.motherName}</Label><Input id="mother_name" name="mother_name" defaultValue={editing.mother_name} /></div>
-              <div><Label htmlFor="mother_phone">{tt.columns.motherPhone}</Label><Input id="mother_phone" name="mother_phone" defaultValue={editing.mother_phone} /></div>
-              <div><Label htmlFor="father_name">{tt.columns.fatherName}</Label><Input id="father_name" name="father_name" defaultValue={editing.father_name} /></div>
-              <div><Label htmlFor="father_phone">{tt.columns.fatherPhone}</Label><Input id="father_phone" name="father_phone" defaultValue={editing.father_phone} /></div>
-              <div><Label>{tt.columns.gender}</Label><Select name="gender" defaultValue={editing.gender}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ወንድ">{genderLabel("ወንድ", lang)}</SelectItem><SelectItem value="ሴት">{genderLabel("ሴት", lang)}</SelectItem></SelectContent></div>
-              <DialogFooter><Button type="button" variant="outline" onClick={() => setEditing(null)}>{tt.cancel}</Button><Button type="submit">{tt.save}</Button></DialogFooter>
-            </form>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete */}
-      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{tt.deleteTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{tt.deleteBody}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{tt.cancel}</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => {
-              if (!deleting) return;
-              try {
-                await doDelete({ data: { id: deleting.id } });
-                toast.success(tt.deleted);
-                setDeleting(null);
-                await refresh();
-              } catch { toast.error(tt.deleteFailed); }
-            }}>{tt.delete}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
+function EditDialog({ editing, onClose, onSave }: { editing: AdminRegistrationV2 | null; onClose: () => void; onSave: (data: { id: string; full_name: string; christian_name: string; gender: "ወንድ" | "ሴት"; age_group: "7_13" | "14_17" | "18_plus"; birth_date_ec: string; mother_name: string; mother_phone: string; father_name: string; father_phone: string; status: "pending" | "approved" | "rejected" }) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  if (!editing) return null;
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); setSaving(true); const f = new FormData(e.currentTarget); try { await onSave({ id: editing.id, full_name: String(f.get("full_name") ?? ""), christian_name: String(f.get("christian_name") ?? ""), gender: String(f.get("gender") ?? editing.gender) as "ወንድ" | "ሴት", age_group: String(f.get("age_group") ?? editing.age_group) as "7_13" | "14_17" | "18_plus", birth_date_ec: String(f.get("birth_date_ec") ?? ""), mother_name: String(f.get("mother_name") ?? ""), mother_phone: String(f.get("mother_phone") ?? ""), father_name: String(f.get("father_name") ?? ""), father_phone: String(f.get("father_phone") ?? ""), status: editing.status }); } finally { setSaving(false); } };
+  return <Dialog open={!!editing} onOpenChange={(o) => !o && onClose()}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>Edit registration</DialogTitle></DialogHeader><form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}><div><Label htmlFor="full_name">Full Name</Label><Input id="full_name" name="full_name" defaultValue={editing.full_name} required /></div><div><Label htmlFor="christian_name">Christian Name</Label><Input id="christian_name" name="christian_name" defaultValue={editing.christian_name} required /></div><div><Label>Gender</Label><Select name="gender" defaultValue={editing.gender}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ወንድ">ወንድ</SelectItem><SelectItem value="ሴት">ሴት</SelectItem></SelectContent></Select></div><div><Label>Age Group</Label><Select name="age_group" defaultValue={editing.age_group ?? "7_13"}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="7_13">7–13</SelectItem><SelectItem value="14_17">14–17</SelectItem><SelectItem value="18_plus">18+</SelectItem></SelectContent></Select></div><div className="sm:col-span-2"><Label htmlFor="birth_date_ec">Ethiopian Birth Date (DD/MM/YYYY)</Label><Input id="birth_date_ec" name="birth_date_ec" defaultValue={editing.birth_date_ec ?? ""} placeholder="01/01/2015" required /><p className="mt-1 text-xs text-muted-foreground">Saving recalculates the Ethiopian age and blocks an age-group mismatch.</p></div><div><Label htmlFor="mother_name">Mother Name</Label><Input id="mother_name" name="mother_name" defaultValue={editing.mother_name} /></div><div><Label htmlFor="mother_phone">Mother Phone</Label><Input id="mother_phone" name="mother_phone" defaultValue={editing.mother_phone} /></div><div><Label htmlFor="father_name">Father Name</Label><Input id="father_name" name="father_name" defaultValue={editing.father_name} /></div><div><Label htmlFor="father_phone">Father Phone</Label><Input id="father_phone" name="father_phone" defaultValue={editing.father_phone} /></div><DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
