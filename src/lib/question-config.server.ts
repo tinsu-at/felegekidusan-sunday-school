@@ -72,7 +72,7 @@ export function normalizeQuestions(raw: unknown): QuestionConfig[] {
     .sort((a, b) => a.position - b.position);
 }
 
-export async function publishedQuestionSet(): Promise<{
+export async function publishedQuestionSet(version?: number): Promise<{
   version: number;
   questions: QuestionConfig[];
 }> {
@@ -80,12 +80,17 @@ export async function publishedQuestionSet(): Promise<{
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
-    const { data } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("registration_question_versions")
-      .select("version, questions")
-      .order("version", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .select("version, questions");
+
+    if (Number.isInteger(version) && (version as number) > 0) {
+      query = query.eq("version", version as number);
+    } else {
+      query = query.order("version", { ascending: false }).limit(1);
+    }
+
+    const { data } = await query.maybeSingle();
     return {
       version: Number(data?.version ?? 0),
       questions: normalizeQuestions(data?.questions),
