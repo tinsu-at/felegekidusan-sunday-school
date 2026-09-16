@@ -125,7 +125,7 @@ function questionGroup(q: QuestionConfig): string {
 
 function shortLabel(q: QuestionConfig, lang: Lang): string {
   const first = questionLabel(q, lang).split("\n")[0] ?? q.field_key;
-  return first.replace(/^[\d\u0030-\u0039\uFE0F\u20E3\s.]+/u, "").trim() || q.field_key;
+  return first.replace(/^\s*[0-9]+(?:\uFE0F?\u20E3)?[.)]?\s*/u, "").trim() || q.field_key;
 }
 
 function displayValue(q: QuestionConfig, value: string | undefined, lang: Lang) {
