@@ -29,18 +29,13 @@ export type AdminRegistration = {
 };
 
 /**
- * Accounts that always hold OWNER-level access, matched by the authenticated
- * email address. No passwords or secrets live here — sign-in still goes
- * through the normal auth provider.
+ * The single designated owner account. Sign-in still goes through the normal
+ * Supabase authentication flow; this address only identifies the owner.
  */
-const OWNER_EMAILS = [
-  "tinsaetsegaye85@gmail.com",
-  "sinsaetsegaye85@gmail.com",
-] as const;
+const OWNER_EMAILS = ["tinsaetsegaye85@gmail.com"] as const;
 
 /** Primary owner address shown in the dashboard. */
 export const OWNER_EMAIL = OWNER_EMAILS[0];
-
 
 function isOwnerEmail(email: unknown) {
   return OWNER_EMAILS.includes(
@@ -52,7 +47,7 @@ function isOwnerEmail(email: unknown) {
 export const getAdminStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const email = String(context.claims['email'] ?? "").trim().toLowerCase();
+    const email = String(context.claims["email"] ?? "").trim().toLowerCase();
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
@@ -105,7 +100,6 @@ export const getAdminStatus = createServerFn({ method: "GET" })
       ownerEmail: OWNER_EMAIL,
     };
   });
-
 
 /** The very first signed-in user may claim owner + administrator access. */
 export const claimFirstAdmin = createServerFn({ method: "POST" })
@@ -223,14 +217,13 @@ async function assertOwner(context: {
   userId: string;
   claims?: Record<string, unknown>;
 }) {
-  if (isOwnerEmail(context.claims?.['email'])) return;
+  if (isOwnerEmail(context.claims?.["email"])) return;
   const { data } = await context.supabase.rpc("has_role", {
     _user_id: context.userId,
     _role: "owner",
   });
   if (!data) throw new Error("Forbidden");
 }
-
 
 export type BotAdmin = {
   id: string;
