@@ -33,6 +33,47 @@ export type AdminRegistrationV2 = {
   archived_by: string | null;
 };
 
+export type RegistrationHistoricalQuestion = {
+  field_key: string;
+  label_am: string;
+  label_en: string;
+  answer: string;
+  required: boolean;
+  age_group: "all" | AgeGroup;
+  position: number;
+};
+
+export type RegistrationAuditEntry = {
+  id: string;
+  registration_id: string;
+  actor_user_id: string;
+  action: string;
+  changes: Record<string, unknown>;
+  created_at: string;
+};
+
+type QuestionSnapshot = {
+  field_key: string;
+  label_am: string;
+  label_en: string;
+  required: boolean;
+  age_group?: "all" | AgeGroup;
+  position: number;
+  active?: boolean;
+};
+
+function isQuestionSnapshot(value: unknown): value is QuestionSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const question = value as Record<string, unknown>;
+  return (
+    typeof question.field_key === "string" &&
+    typeof question.label_am === "string" &&
+    typeof question.label_en === "string" &&
+    typeof question.required === "boolean" &&
+    typeof question.position === "number"
+  );
+}
+
 const OWNER_EMAILS = ["tinsaetsegaye85@gmail.com", "sinsaetsegaye85@gmail.com"] as const;
 function isOwnerEmail(email: unknown) {
   return OWNER_EMAILS.includes(String(email ?? "").trim().toLowerCase() as (typeof OWNER_EMAILS)[number]);
@@ -144,7 +185,7 @@ export const listRegistrationAuditV2 = createServerFn({ method: "GET" })
     await assertStaff(context);
     const { data: rows, error } = await context.supabase.from("registration_audit_history").select("id, registration_id, actor_user_id, action, changes, created_at").eq("registration_id", data.registration_id).order("created_at", { ascending: false });
     if (error) throw new Error("Could not load audit history");
-    return rows ?? [];
+    return (rows ?? []) as RegistrationAuditEntry[];
   });
 
 export const getRegistrationHistoricalQuestionsV2 = createServerFn({ method: "GET" })
@@ -155,23 +196,26 @@ export const getRegistrationHistoricalQuestionsV2 = createServerFn({ method: "GE
     const { data: row, error } = await context.supabase.from("registrations").select(REG_COLUMNS).eq("id", data.registration_id).single();
     if (error || !row) throw new Error("Registration not found");
     const version = Number(row.question_version ?? 0);
-    let questions: any[] = [];
+    let questions: QuestionSnapshot[] = [];
     if (version > 0) {
       const { data: versionRow } = await context.supabase.from("registration_question_versions").select("version, questions").eq("version", version).maybeSingle();
-      questions = Array.isArray(versionRow?.questions) ? versionRow.questions : [];
+      if (Array.isArray(versionRow?.questions)) questions = versionRow.questions.filter(isQuestionSnapshot);
     }
     const answers = (row.extra_answers ?? {}) as Record<string, string>;
-    return questions.filter((q) => q.active !== false).sort((a, b) => a.position - b.position).map((q) => {
-      let answer = "";
-      if (q.field_key === "full_name") answer = row.full_name;
-      else if (q.field_key === "christian_name") answer = row.christian_name;
-      else if (q.field_key === "gender") answer = row.gender;
-      else if (q.field_key === "birth_date_ec") answer = row.birth_date_ec ?? "";
-      else if (q.field_key === "mother_name") answer = row.mother_name;
-      else if (q.field_key === "mother_phone") answer = row.mother_phone;
-      else if (q.field_key === "father_name") answer = row.father_name;
-      else if (q.field_key === "father_phone") answer = row.father_phone;
-      else answer = answers[q.field_key] ?? "";
-      return { field_key: q.field_key, label_am: q.label_am, label_en: q.label_en, answer: answer || (q.required ? "" : "-"), required: q.required, age_group: q.age_group ?? "all", position: q.position };
-    });
+    return questions
+      .filter((q) => q.active !== false)
+      .sort((a, b) => a.position - b.position)
+      .map((q): RegistrationHistoricalQuestion => {
+        let answer = "";
+        if (q.field_key === "full_name") answer = row.full_name;
+        else if (q.field_key === "christian_name") answer = row.christian_name;
+        else if (q.field_key === "gender") answer = row.gender;
+        else if (q.field_key === "birth_date_ec") answer = row.birth_date_ec ?? "";
+        else if (q.field_key === "mother_name") answer = row.mother_name;
+        else if (q.field_key === "mother_phone") answer = row.mother_phone;
+        else if (q.field_key === "father_name") answer = row.father_name;
+        else if (q.field_key === "father_phone") answer = row.father_phone;
+        else answer = answers[q.field_key] ?? "";
+        return { field_key: q.field_key, label_am: q.label_am, label_en: q.label_en, answer: answer || (q.required ? "" : "-"), required: q.required, age_group: q.age_group ?? "all", position: q.position };
+      });
   });
