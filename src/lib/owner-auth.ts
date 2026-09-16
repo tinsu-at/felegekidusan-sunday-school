@@ -2,7 +2,6 @@ import type { createClient } from '@supabase/supabase-js';
 
 export const OWNER_EMAILS = [
   'tinsaetsegaye85@gmail.com',
-  'sinsaetsegaye85@gmail.com',
 ] as const;
 
 export function isOwnerEmail(email: unknown): boolean {
