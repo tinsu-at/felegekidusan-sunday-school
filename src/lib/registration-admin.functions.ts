@@ -74,7 +74,7 @@ function isQuestionSnapshot(value: unknown): value is QuestionSnapshot {
   );
 }
 
-const OWNER_EMAILS = ["tinsaetsegaye85@gmail.com", "sinsaetsegaye85@gmail.com"] as const;
+const OWNER_EMAILS = ["tinsaetsegaye85@gmail.com"] as const;
 function isOwnerEmail(email: unknown) {
   return OWNER_EMAILS.includes(String(email ?? "").trim().toLowerCase() as (typeof OWNER_EMAILS)[number]);
 }
