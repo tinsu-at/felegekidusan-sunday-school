@@ -27,14 +27,4 @@ export default tseslint.config(
     // Formatting is handled by Prettier separately; it should not block CI.
     rules: { "prettier/prettier": "off" },
   },
-  {
-    // Lovable-generated adapter: the timer is intentionally mutable because its callback closes over it.
-    files: ["src/integrations/supabase/previewAuthStorage.ts"],
-    rules: { "prefer-const": "off" },
-  },
-  {
-    // Telegram keycap/variation-selector regex is intentional; ESLint's rule is a false positive here.
-    files: ["src/lib/telegram-bot.server.ts"],
-    rules: { "no-misleading-character-class": "off" },
-  },
 );
