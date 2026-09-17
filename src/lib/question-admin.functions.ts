@@ -34,9 +34,6 @@ const questionSchema = z.object({
 });
 
 async function assertOwner(context: { userId: string; claims?: Record<string, unknown>; supabase: unknown }) {
-  // The designated owner is authorized by the verified Supabase email. This
-  // keeps question editing consistent with the rest of the owner-only tools
-  // and does not require the owner role row to already exist in the database.
   if (isOwnerEmail(context.claims?.["email"])) return;
 
   const client = context.supabase as { rpc: (name: "has_role", args: Record<string, unknown>) => Promise<{ data: unknown }> };
@@ -68,7 +65,10 @@ export const saveQuestionEditor = createServerFn({ method: "POST" })
     const { id, ...question } = data;
     const payload = id ? { id, ...question } : question;
     const { error } = await supabaseAdmin.from("registration_questions").upsert(payload, { onConflict: "field_key" });
-    if (error) throw new Error("Could not save question");
+    if (error) {
+      console.error("[QuestionEditor] Could not save question", error);
+      throw new Error(`Could not save question: ${error.message}`);
+    }
     return { ok: true };
   });
 
