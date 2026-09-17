@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { isOwnerEmail } from "@/lib/owner-auth";
 import type { QuestionAgeGroup } from "@/lib/question-config";
 
 const AGE_GROUPS = ["all", "7_13", "14_17", "18_plus"] as const;
@@ -27,8 +28,13 @@ const questionSchema = z.object({
   age_group: z.enum(AGE_GROUPS),
 });
 
-async function assertOwner(context: { userId: string; supabase: unknown }) {
-  const client = context.supabase as { rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: unknown }> };
+async function assertOwner(context: { userId: string; claims?: Record<string, unknown>; supabase: unknown }) {
+  // The designated owner is authorized by the verified Supabase email. This
+  // keeps question editing consistent with the rest of the owner-only tools
+  // and does not require the owner role row to already exist in the database.
+  if (isOwnerEmail(context.claims?.["email"])) return;
+
+  const client = context.supabase as { rpc: (name: "has_role", args: Record<string, unknown>) => Promise<{ data: unknown }> };
   const { data } = await client.rpc("has_role", { _user_id: context.userId, _role: "owner" });
   if (!data) throw new Error("Owner access required");
 }
