@@ -9,7 +9,12 @@ const AGE_GROUPS = ["all", "7_13", "14_17", "18_plus"] as const;
 const inputTypes = ["text", "phone", "ethiopian_date", "ethiopian_year", "options"] as const;
 
 const questionSchema = z.object({
-  id: z.string().uuid().optional(),
+  // The UI uses an empty string for a new question. Treat that as "no id"
+  // rather than passing it to UUID validation.
+  id: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().uuid().optional(),
+  ),
   field_key: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/),
   position: z.number().int().min(1).max(1000),
   label_am: z.string().max(500),
