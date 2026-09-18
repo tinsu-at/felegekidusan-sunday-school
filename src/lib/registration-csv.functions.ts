@@ -81,7 +81,7 @@ export const exportRegistrationsCsvV2 = createServerFn({ method: "GET" })
       if (existing) existing.versions.add(version); else questionMap.set(q.field_key, { question: q, versions: new Set([version]) });
     }
     const columns = [...questionMap.values()].sort((a, b) => a.question.position - b.question.position || a.question.field_key.localeCompare(b.question.field_key));
-    const headers = ["registration_id", "full_name", "christian_name", "gender", "birth_date_ec", "age_group", "age_years", "question_version", ...columns.map(({ question }) => questionLabel(question, "en").split("\n")[0]?.trim() || question.field_key), "status", "created_at"];
+    const headers = ["registration_id", "age_group", "age_years", "question_version", ...columns.map(({ question }) => questionLabel(question, "en").split("\n")[0]?.trim() || question.field_key), "status", "created_at"];
     const uniqueHeaders = headers.map((header, index) => { const first = headers.indexOf(header); return first === index ? header : `${header} (${index + 1})`; });
 
     const csvRows = rows.map((row) => {
@@ -89,7 +89,7 @@ export const exportRegistrationsCsvV2 = createServerFn({ method: "GET" })
       const questions = rowVersion == null ? [] : (versionMap.get(rowVersion) ?? []);
       const questionByKey = new Map(questions.map((q) => [q.field_key, q]));
       const ageGroup = (row.age_group as AgeGroup | null) ?? null;
-      const values = [row.registration_id, row.full_name, row.christian_name, row.gender, answerValue(row, { field_key: "birth_date_ec", position: 0, label_am: "", label_en: "", input_type: "ethiopian_date", required: true, amharic_only: false, min_words: null, max_words: null, exact_words: null, error_am: "", error_en: "", options: [], is_core: true, active: true, age_group: "all" }), ageGroup, row.age_years, rowVersion, ...columns.map(({ question: columnQuestion }) => { const q = questionByKey.get(columnQuestion.field_key); if (!q || !applicable(q, ageGroup)) return ""; const value = answerValue(row, q); return value || (q.required ? "" : "-"); }), row.status, row.created_at];
+      const values = [row.registration_id, ageGroup, row.age_years, rowVersion, ...columns.map(({ question: columnQuestion }) => { const q = questionByKey.get(columnQuestion.field_key); if (!q || !applicable(q, ageGroup)) return ""; const value = answerValue(row, q); return value || (q.required ? "" : "-"); }), row.status, row.created_at];
       return values.map(csvEscape).join(",");
     });
 
