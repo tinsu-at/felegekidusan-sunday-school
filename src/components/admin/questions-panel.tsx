@@ -14,6 +14,7 @@ import {
   listQuestionEditor,
   saveQuestionEditor,
   reorderQuestionEditor,
+  deleteQuestionEditor,
   publishQuestionEditor,
 } from "@/lib/question-admin.functions";
 import { INPUT_TYPES, label as questionLabel, optionLabel, type InputType, type QuestionDraft, type QuestionOption, type QuestionAgeGroup } from "@/lib/question-config";
@@ -66,6 +67,7 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
   const load = useServerFn(listQuestionEditor);
   const saveFn = useServerFn(saveQuestionEditor);
   const reorderFn = useServerFn(reorderQuestionEditor);
+  const deleteFn = useServerFn(deleteQuestionEditor);
   const publishFn = useServerFn(publishQuestionEditor);
 
   const query = useQuery({
@@ -115,6 +117,20 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
       await refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (en ? "Could not reorder." : "ቅደም ተከተሉን መቀየር አልተቻለም።"));
+    } finally { setBusy(false); }
+  };
+
+  const removeQuestion = async (q: QuestionDraft) => {
+    if (!q.id || q.is_core) return;
+    const confirmed = window.confirm(en ? `Delete “${q.label_en || q.field_key}” from the draft? Existing registrations will keep their historical version.` : `ይህን ጥያቄ ከረቂቁ ላይ ማጥፋት ይፈልጋሉ? ያሉ ምዝገባዎች የቀድሞ ቅጂያቸውን ይጠብቃሉ።`);
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await deleteFn({ data: { id: q.id } });
+      toast.success(en ? "Question deleted from draft." : "ጥያቄው ከረቂቁ ተሰርዟል።");
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (en ? "Could not delete question." : "ጥያቄውን መሰረዝ አልተቻለም።"));
     } finally { setBusy(false); }
   };
 
@@ -170,6 +186,7 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
                 </div>
               </div>
               <Button size="sm" variant="outline" onClick={() => setEditing({ ...q, age_group: q.age_group ?? "all" })}>{en ? "Edit" : "አስተካክል"}</Button>
+              {!q.is_core && <Button size="sm" variant="destructive" disabled={busy} onClick={() => void removeQuestion(q)}>{en ? "Delete" : "ሰርዝ"}</Button>}
             </div>
           </li>
         ))}
