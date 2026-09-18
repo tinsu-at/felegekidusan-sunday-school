@@ -44,9 +44,10 @@ export const exportRegistrationsCsvV2 = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     await assertOwner(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const [{ data: rawRows, error }, { data: versions, error: versionError }] = await Promise.all([
+    const [{ data: rawRows, error }, { data: versions, error: versionError }, { data: draftQuestions, error: draftError }] = await Promise.all([
       supabaseAdmin.from("registrations").select("id, registration_id, full_name, christian_name, gender, birth_date_ec, birth_year_ec, birth_month_ec, birth_day_ec, mother_name, mother_phone, father_name, father_phone, extra_answers, age_years, age_group, question_version, status, created_at, archived_at").order("created_at", { ascending: false }),
       supabaseAdmin.from("registration_question_versions").select("version, questions").order("version", { ascending: true }),
+      supabaseAdmin.from("registration_questions").select("field_key, position, label_am, label_en, input_type, required, amharic_only, min_words, max_words, exact_words, error_am, error_en, options, is_core, active, age_group").order("position", { ascending: true }),
     ]);
     if (error) {
       console.error("[Registration Export] registrations query failed:", error);
@@ -55,6 +56,10 @@ export const exportRegistrationsCsvV2 = createServerFn({ method: "GET" })
     if (versionError) {
       console.error("[Registration Export] question versions query failed:", versionError);
       throw new Error(`Could not export the registrations: ${versionError.message}`);
+    }
+    if (draftError) {
+      console.error("[Registration Export] draft questions query failed:", draftError);
+      throw new Error(`Could not export the registrations: ${draftError.message}`);
     }
 
     const search = data.search.toLowerCase();
@@ -80,9 +85,17 @@ export const exportRegistrationsCsvV2 = createServerFn({ method: "GET" })
       const existing = questionMap.get(q.field_key);
       if (existing) existing.versions.add(version); else questionMap.set(q.field_key, { question: q, versions: new Set([version]) });
     }
-    const columns = [...questionMap.values()].sort((a, b) => a.question.position - b.question.position || a.question.field_key.localeCompare(b.question.field_key));
+    const columns = [...questionMap.values()];
     const coreKeys = ["full_name", "christian_name", "gender", "birth_date_ec"];
-    const remainingColumns = columns.filter(({ question }) => !coreKeys.includes(question.field_key));
+    const draftOrder = (draftQuestions ?? []).map((q) => q as QuestionConfig).filter((q) => q.field_key);
+    const draftKeys = new Set(draftOrder.map((q) => q.field_key));
+    const historicalOnly = columns
+      .filter(({ question }) => !draftKeys.has(question.field_key))
+      .sort((a, b) => a.question.position - b.question.position || a.question.field_key.localeCompare(b.question.field_key));
+    const remainingColumns = [
+      ...draftOrder.map((question) => ({ question, versions: new Set<number>() })).filter(({ question }) => !coreKeys.includes(question.field_key)),
+      ...historicalOnly,
+    ];
     const headers = ["registration_id", "full_name", "christian_name", "gender", "birth_date_ec", ...remainingColumns.map(({ question }) => questionLabel(question, "en").split("\n")[0]?.trim() || question.field_key), "age_group", "age_years", "question_version", "status", "created_at"];
     const uniqueHeaders = headers.map((header, index) => { const first = headers.indexOf(header); return first === index ? header : `${header} (${index + 1})`; });
 
