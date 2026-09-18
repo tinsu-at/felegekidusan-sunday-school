@@ -191,7 +191,18 @@ export const setRegistrationStatusV2 = createServerFn({ method: "POST" })
     const { data: before } = await context.supabase.from("registrations").select("status").eq("id", data.id).maybeSingle();
     const { error } = await context.supabase.from("registrations").update({ status: data.status }).eq("id", data.id);
     if (error) throw new Error("Could not change the status");
-    if (before?.status !== data.status) await context.supabase.from("registration_audit_history").insert({ registration_id: data.id, actor_user_id: context.userId, action: "status_change", changes: { status: { from: before?.status, to: data.status } } });
+    if (before?.status !== data.status) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { error: auditError } = await supabaseAdmin
+        .from("registration_audit_history")
+        .insert({
+          registration_id: data.id,
+          actor_user_id: context.userId,
+          action: "status_change",
+          changes: { status: { from: before?.status, to: data.status } },
+        });
+      if (auditError) throw new Error("Status changed, but audit history could not be saved");
+    }
     return { ok: true };
   });
 
