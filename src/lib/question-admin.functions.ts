@@ -72,6 +72,30 @@ export const saveQuestionEditor = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const deleteQuestionEditor = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: question, error: findError } = await supabaseAdmin.from("registration_questions").select("id, field_key, is_core").eq("id", data.id).maybeSingle();
+    if (findError) throw new Error(`Could not find question: ${findError.message}`);
+    if (!question) throw new Error("Question not found");
+    if (question.is_core) throw new Error("Core registration questions cannot be deleted.");
+    const { error } = await supabaseAdmin.from("registration_questions").delete().eq("id", data.id);
+    if (error) {
+      console.error("[QuestionEditor] Could not delete question", error);
+      throw new Error(`Could not delete question: ${error.message}`);
+    }
+    const { data: remaining, error: listError } = await supabaseAdmin.from("registration_questions").select("id").order("position", { ascending: true });
+    if (listError) throw new Error("Question deleted, but positions could not be normalized.");
+    for (let i = 0; i < (remaining ?? []).length; i += 1) {
+      const { error: reorderError } = await supabaseAdmin.from("registration_questions").update({ position: i + 1 }).eq("id", remaining[i].id);
+      if (reorderError) throw new Error("Question deleted, but positions could not be normalized.");
+    }
+    return { ok: true };
+  });
+
 export const reorderQuestionEditor = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(1000) }).parse(data))
