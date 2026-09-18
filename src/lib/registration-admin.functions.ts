@@ -169,7 +169,8 @@ export const updateRegistrationV2 = createServerFn({ method: "POST" })
       };
     }
     if (Object.keys(changes).length) {
-      const { error: auditError } = await context.supabase
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { error: auditError } = await supabaseAdmin
         .from("registration_audit_history")
         .insert({
           registration_id: data.id,
