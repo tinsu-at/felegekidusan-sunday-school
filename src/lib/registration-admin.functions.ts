@@ -116,7 +116,13 @@ export const listRegistrationsV2 = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await assertStaff(context);
-    const { data, error } = await context.supabase.from("registrations").select(REG_COLUMNS).order("created_at", { ascending: false });
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Authorization is checked above; use the server client for the data read so
+    // the dashboard is not blocked by a stale/mismatched registration RLS policy.
+    const { data, error } = await supabaseAdmin
+      .from("registrations")
+      .select(REG_COLUMNS)
+      .order("created_at", { ascending: false });
     if (error) throw new Error("Could not load registrations");
     return (data ?? []) as AdminRegistrationV2[];
   });
