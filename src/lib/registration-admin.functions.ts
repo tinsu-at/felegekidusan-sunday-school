@@ -2,7 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { ethiopianAge } from "@/lib/question-config";
+import { ethiopianAge, validateEthiopianDate } from "@/lib/question-config";
+import { isOwnerEmail } from "@/lib/owner-auth";
 
 const AGE_GROUPS = ["7_13", "14_17", "18_plus"] as const;
 type AgeGroup = (typeof AGE_GROUPS)[number];
@@ -74,10 +75,6 @@ function isQuestionSnapshot(value: unknown): value is QuestionSnapshot {
   );
 }
 
-const OWNER_EMAILS = ["tinsaetsegaye85@gmail.com"] as const;
-function isOwnerEmail(email: unknown) {
-  return OWNER_EMAILS.includes(String(email ?? "").trim().toLowerCase() as (typeof OWNER_EMAILS)[number]);
-}
 
 async function assertStaff(context: { userId: string; claims?: Record<string, unknown>; supabase: { rpc: (name: "has_role", args: Record<string, unknown>) => PromiseLike<{ data: unknown }> } }) {
   if (isOwnerEmail(context.claims?.["email"])) return;
@@ -103,9 +100,9 @@ const updateSchema = z.object({
 });
 
 function parseBirthDate(value: string) {
-  const [day, month, year] = value.split("/").map(Number);
-  if (!day || !month || !year || month < 1 || month > 13 || day < 1 || day > 30) throw new Error("Invalid Ethiopian birth date");
-  return { day, month, year };
+  const parsed = validateEthiopianDate(value);
+  if (!parsed) throw new Error("Invalid Ethiopian birth date");
+  return parsed;
 }
 
 function matchesGroup(age: number | null, group: AgeGroup) {
