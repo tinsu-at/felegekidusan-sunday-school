@@ -213,7 +213,11 @@ export const archiveRegistrationV2 = createServerFn({ method: "POST" })
     await assertStaff(context);
     const { error } = await context.supabase.from("registrations").update({ archived_at: new Date().toISOString(), archived_by: context.userId }).eq("id", data.id);
     if (error) throw new Error("Could not archive the registration");
-    await context.supabase.from("registration_audit_history").insert({ registration_id: data.id, actor_user_id: context.userId, action: "archive", changes: { archived: { from: false, to: true } } });
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: auditError } = await supabaseAdmin
+      .from("registration_audit_history")
+      .insert({ registration_id: data.id, actor_user_id: context.userId, action: "archive", changes: { archived: { from: false, to: true } } });
+    if (auditError) throw new Error("Registration archived, but audit history could not be saved");
     return { ok: true };
   });
 
@@ -224,7 +228,11 @@ export const restoreRegistrationV2 = createServerFn({ method: "POST" })
     await assertStaff(context);
     const { error } = await context.supabase.from("registrations").update({ archived_at: null, archived_by: null }).eq("id", data.id);
     if (error) throw new Error("Could not restore the registration");
-    await context.supabase.from("registration_audit_history").insert({ registration_id: data.id, actor_user_id: context.userId, action: "restore", changes: { archived: { from: true, to: false } } });
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: auditError } = await supabaseAdmin
+      .from("registration_audit_history")
+      .insert({ registration_id: data.id, actor_user_id: context.userId, action: "restore", changes: { archived: { from: true, to: false } } });
+    if (auditError) throw new Error("Registration restored, but audit history could not be saved");
     return { ok: true };
   });
 
