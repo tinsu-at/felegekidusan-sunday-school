@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { ethiopianAge, label as questionLabel } from "@/lib/question-config";
 import { publishedQuestions } from "@/lib/question-config.server";
+import { OWNER_EMAIL, isOwnerEmail } from "@/lib/owner-auth";
 
 const REG_COLUMNS =
   "id, registration_id, full_name, christian_name, gender, birth_date_ec, birth_year_ec, birth_month_ec, birth_day_ec, mother_name, mother_phone, father_name, father_phone, extra_answers, age_years, status, created_at";
@@ -32,16 +33,8 @@ export type AdminRegistration = {
  * The single designated owner account. Sign-in still goes through the normal
  * Supabase authentication flow; this address only identifies the owner.
  */
-const OWNER_EMAILS = ["tinsaetsegaye85@gmail.com"] as const;
-
 /** Primary owner address shown in the dashboard. */
-export const OWNER_EMAIL = OWNER_EMAILS[0];
-
-function isOwnerEmail(email: unknown) {
-  return OWNER_EMAILS.includes(
-    String(email ?? "").trim().toLowerCase() as (typeof OWNER_EMAILS)[number],
-  );
-}
+export { OWNER_EMAIL } from "@/lib/owner-auth";
 
 /** Is the caller an admin/owner? Also reports whether any admin exists yet. */
 export const getAdminStatus = createServerFn({ method: "GET" })
@@ -61,9 +54,10 @@ export const getAdminStatus = createServerFn({ method: "GET" })
       const have = new Set((existing ?? []).map((r) => r.role));
       const missing = (["owner", "admin"] as const).filter((r) => !have.has(r));
       if (missing.length) {
-        await supabaseAdmin
+        const { error: roleError } = await supabaseAdmin
           .from("user_roles")
           .insert(missing.map((role) => ({ user_id: context.userId, role })));
+        if (roleError) throw new Error("Could not initialize owner access");
       }
       const { count } = await supabaseAdmin
         .from("user_roles")
@@ -105,6 +99,7 @@ export const getAdminStatus = createServerFn({ method: "GET" })
 export const claimFirstAdmin = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    if (!isOwnerEmail(context.claims?.["email"])) throw new Error("Forbidden");
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
@@ -126,6 +121,7 @@ export const claimFirstAdmin = createServerFn({ method: "POST" })
 export const listRegistrations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    await assertStaff(context);
     const { data, error } = await context.supabase
       .from("registrations")
       .select(REG_COLUMNS)
@@ -151,6 +147,7 @@ export const updateRegistration = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => updateSchema.parse(data))
   .handler(async ({ data, context }) => {
+    await assertStaff(context);
     const { id, birth_date_ec, ...rest } = data;
     const parts = birth_date_ec.split("/").map(Number);
     const [day, month, year] = parts;
@@ -180,6 +177,7 @@ export const setRegistrationStatus = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data, context }) => {
+    await assertStaff(context);
     const { error } = await context.supabase
       .from("registrations")
       .update({ status: data.status })
@@ -194,6 +192,7 @@ export const deleteRegistration = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data, context }) => {
+    await assertStaff(context);
     const { error } = await context.supabase
       .from("registrations")
       .delete()
@@ -238,6 +237,7 @@ export type BotAdmin = {
 export const listBotAdmins = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    await assertOwner(context);
     const { data, error } = await context.supabase
       .from("bot_admins")
       .select("id, telegram_user_id, telegram_chat_id, label, role, active, created_at")
@@ -307,6 +307,7 @@ export type HelpRow = {
 export const listHelpContent = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    await assertOwner(context);
     const { data, error } = await context.supabase
       .from("help_content")
       .select("lang, title, body, instructions, contacts, announcements, buttons");
