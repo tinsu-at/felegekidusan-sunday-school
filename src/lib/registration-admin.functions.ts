@@ -129,15 +129,50 @@ export const updateRegistrationV2 = createServerFn({ method: "POST" })
     const { day, month, year } = parseBirthDate(data.birth_date_ec);
     const age = ethiopianAge(year, month);
     if (!matchesGroup(age, data.age_group)) throw new Error(`Calculated Ethiopian age ${age ?? "unknown"} does not match the selected age group.`);
-    const { data: before, error: readError } = await context.supabase.from("registrations").select("age_group, birth_date_ec, age_years, status").eq("id", data.id).maybeSingle();
+    const { data: before, error: readError } = await context.supabase
+      .from("registrations")
+      .select("full_name, christian_name, gender, age_group, birth_date_ec, age_years, mother_name, mother_phone, father_name, father_phone, status")
+      .eq("id", data.id)
+      .maybeSingle();
     if (readError || !before) throw new Error("Registration not found");
     const { error } = await context.supabase.from("registrations").update({ full_name: data.full_name, christian_name: data.christian_name, gender: data.gender, age_group: data.age_group, birth_date_ec: data.birth_date_ec, birth_day_ec: day, birth_month_ec: month, birth_year_ec: year, age_years: age, mother_name: data.mother_name, mother_phone: data.mother_phone, father_name: data.father_name, father_phone: data.father_phone, status: data.status }).eq("id", data.id);
     if (error) throw new Error(error.message || "Could not update the registration");
     const changes: Record<string, unknown> = {};
-    if (before.age_group !== data.age_group) changes.age_group = { from: before.age_group, to: data.age_group };
-    if (before.birth_date_ec !== data.birth_date_ec) changes.birth_date_ec = { from: before.birth_date_ec, to: data.birth_date_ec, age: { from: before.age_years, to: age } };
-    if (before.status !== data.status) changes.status = { from: before.status, to: data.status };
-    if (Object.keys(changes).length) await context.supabase.from("registration_audit_history").insert({ registration_id: data.id, actor_user_id: context.userId, action: "admin_update", changes });
+    const trackedFields = [
+      "full_name",
+      "christian_name",
+      "gender",
+      "age_group",
+      "birth_date_ec",
+      "mother_name",
+      "mother_phone",
+      "father_name",
+      "father_phone",
+      "status",
+    ] as const;
+    for (const field of trackedFields) {
+      const from = before[field];
+      const to = data[field];
+      if (from !== to) changes[field] = { from, to };
+    }
+    if (before.birth_date_ec !== data.birth_date_ec) {
+      changes.birth_date_ec = {
+        from: before.birth_date_ec,
+        to: data.birth_date_ec,
+        age: { from: before.age_years, to: age },
+      };
+    }
+    if (Object.keys(changes).length) {
+      const { error: auditError } = await context.supabase
+        .from("registration_audit_history")
+        .insert({
+          registration_id: data.id,
+          actor_user_id: context.userId,
+          action: "admin_update",
+          changes,
+        });
+      if (auditError) throw new Error("Registration updated, but audit history could not be saved");
+    }
     return { ok: true, age_years: age };
   });
 
