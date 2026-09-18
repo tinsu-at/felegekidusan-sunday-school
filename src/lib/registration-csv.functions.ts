@@ -48,7 +48,14 @@ export const exportRegistrationsCsvV2 = createServerFn({ method: "GET" })
       supabaseAdmin.from("registrations").select("id, registration_id, full_name, christian_name, gender, birth_date_ec, birth_year_ec, birth_month_ec, birth_day_ec, mother_name, mother_phone, father_name, father_phone, extra_answers, age_years, age_group, question_version, status, created_at, archived_at").order("created_at", { ascending: false }),
       supabaseAdmin.from("registration_question_versions").select("version, questions").order("version", { ascending: true }),
     ]);
-    if (error || versionError) throw new Error("Could not export the registrations");
+    if (error) {
+      console.error("[Registration Export] registrations query failed:", error);
+      throw new Error(`Could not export the registrations: ${error.message}`);
+    }
+    if (versionError) {
+      console.error("[Registration Export] question versions query failed:", versionError);
+      throw new Error(`Could not export the registrations: ${versionError.message}`);
+    }
 
     const search = data.search.toLowerCase();
     const rows = (rawRows ?? []).filter((row) => {
