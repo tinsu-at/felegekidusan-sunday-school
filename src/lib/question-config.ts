@@ -30,8 +30,44 @@ export function label(q: QuestionConfig, lang: Lang) { const text = lang === "en
 export function optionLabel(o: QuestionOption, lang: Lang) { return (lang === "en" ? o.label_en : o.label_am) || o.value; }
 const ETHIOPIC_DIGITS: Record<string, string> = { "፩": "1", "፪": "2", "፫": "3", "፬": "4", "፭": "5", "፮": "6", "፯": "7", "፰": "8", "፱": "9" };
 export function normalizeDigits(input: string) { return input.split("").map((c) => ETHIOPIC_DIGITS[c] ?? c).join("").trim(); }
-export function currentEthiopianYear() { const now = new Date(), y = now.getUTCFullYear(), m = now.getUTCMonth() + 1, d = now.getUTCDate(); return m > 9 || (m === 9 && d >= 11) ? y - 7 : y - 8; }
-export function ethiopianAge(birthYear: number | null | undefined, birthMonth?: number | null) { if (!birthYear || birthYear < 1900) return null; let age = currentEthiopianYear() - birthYear; if (birthMonth != null && birthMonth >= 7 && birthMonth <= 13) age -= 1; return age < 0 ? null : age; }
+function gregorianToJdn(year: number, month: number, day: number) {
+  const a = Math.floor((14 - month) / 12);
+  const y = year + 4800 - a;
+  const m = month + 12 * a - 3;
+  return day + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) - 32045;
+}
+
+function jdnToEthiopian(jdn: number) {
+  const offset = 1723856;
+  const r = ((jdn - offset) % 1461 + 1461) % 1461;
+  const n = (r % 365) + 365 * Math.floor(r / 1460);
+  const year = 4 * Math.floor((jdn - offset) / 1461) + Math.floor(r / 365) - Math.floor(r / 1460);
+  return { year, month: Math.floor(n / 30) + 1, day: (n % 30) + 1 };
+}
+
+function currentEthiopianDate() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Addis_Ababa",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.filter((p) => p.type !== "literal").map((p) => [p.type, Number(p.value)]));
+  return jdnToEthiopian(gregorianToJdn(values.year, values.month, values.day));
+}
+
+export function currentEthiopianYear() { return currentEthiopianDate().year; }
+export function ethiopianAge(birthYear: number | null | undefined, birthMonth?: number | null, birthDay?: number | null) {
+  if (!birthYear || birthYear < 1900) return null;
+  const now = currentEthiopianDate();
+  let age = now.year - birthYear;
+  if (birthMonth != null && birthDay != null) {
+    if (birthMonth > now.month || (birthMonth === now.month && birthDay > now.day)) age -= 1;
+  } else if (birthMonth != null && birthMonth > now.month) {
+    age -= 1;
+  }
+  return age < 0 ? null : age;
+}
 const ETHIOPIC_WORD = /^[\u1200-\u137F]+$/;
 const LATIN_WORD = /^[A-Za-z][A-Za-z'’.-]*$/;
 function isEthiopianLeapYear(year: number) { return year % 4 === 3; }
