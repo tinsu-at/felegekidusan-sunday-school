@@ -240,6 +240,7 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
           type="button"
           size="sm"
           variant={selected ? "default" : "outline"}
+          className={selected ? "text-primary-foreground" : "text-foreground"}
           onClick={() => {
             const current = normalizeAgeGroups(editing);
             const next = g.value === "all"
@@ -252,7 +253,10 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
             setEditing({ ...editing, age_groups: next, age_group: next.length === 1 ? next[0] : "all" });
           }}
         >
-          {selected ? "✓ " : ""}{en ? g.en : g.am}
+          <span className="inline-flex items-center gap-1">
+            {selected && <span aria-hidden="true">✓</span>}
+            <span>{en ? g.en : g.am}</span>
+          </span>
         </Button>
       );
     })}
