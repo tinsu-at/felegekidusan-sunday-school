@@ -52,12 +52,24 @@ const emptyDraft = (position: number): QuestionDraft => ({
   options: [],
   is_core: false,
   active: true,
+  age_groups: ["all"],
   age_group: "all",
 });
 
 function numberOrNull(value: string) {
   const n = Number(value);
   return value.trim() && Number.isFinite(n) ? n : null;
+}
+
+function normalizeAgeGroups(q: QuestionDraft): QuestionAgeGroup[] {
+  if (q.age_groups?.length) return q.age_groups;
+  return [q.age_group ?? "all"];
+}
+
+function ageGroupLabel(groups: QuestionAgeGroup[], en: boolean) {
+  return groups
+    .map((value) => GROUPS.find((g) => g.value === value)?.[en ? "en" : "am"] ?? value)
+    .join(", ");
 }
 
 export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
@@ -95,7 +107,17 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
     }
     setBusy(true);
     try {
-      await saveFn({ data: { ...editing, field_key: editing.field_key.trim(), age_group: editing.age_group ?? "all" } });
+      const ageGroups = editing.age_groups?.length
+        ? editing.age_groups
+        : [editing.age_group ?? "all"];
+      await saveFn({
+        data: {
+          ...editing,
+          field_key: editing.field_key.trim(),
+          age_groups: ageGroups,
+          age_group: ageGroups.length === 1 ? ageGroups[0] : "all",
+        },
+      });
       toast.success(en ? "Draft saved." : "ረቂቁ ተቀምጧል።");
       setEditing(null);
       await refresh();
@@ -161,7 +183,7 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
       </div>
 
       <div className="rounded-xl border border-border bg-background/40 p-3 text-xs text-muted-foreground">
-        {en ? "Drag a question directly to its new position. The selected age group controls where the question appears." : "ጥያቄውን በቀጥታ ወደ ፈለጉት ቦታ ይጎትቱ። የተመረጠው የዕድሜ ቡድን ጥያቄው ለማን እንደሚታይ ይወስናል።"}
+        {en ? "Drag a question directly to its new position. Choose one or more age groups for the question." : "ጥያቄውን በቀጥታ ወደ ፈለጉት ቦታ ይጎትቱ። ጥያቄው ለማን እንደሚታይ አንድ ወይም ብዙ የዕድሜ ቡድን ይምረጡ።"}
       </div>
 
       <ul className="space-y-2">
@@ -180,12 +202,12 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
               <div className="min-w-0 flex-1">
                 <div className="font-medium">{questionLabel(q, en ? "en" : "am").split("\n")[0]}</div>
                 <div className="text-xs text-muted-foreground">
-                  {q.field_key} · {GROUPS.find(g => g.value === (q.age_group ?? "all"))?.[en ? "en" : "am"]} · {TYPE_LABEL[q.input_type as InputType]?.[en ? "en" : "am"] ?? q.input_type}
+                  {q.field_key} · {ageGroupLabel(normalizeAgeGroups(q), en)} · {TYPE_LABEL[q.input_type as InputType]?.[en ? "en" : "am"] ?? q.input_type}
                   {q.required ? ` · ${en ? "Required" : "አስፈላጊ"}` : ` · ${en ? "Optional" : "አማራጭ"}`}
                   {!q.active ? ` · ${en ? "Inactive" : "የተዘጋ"}` : ""}
                 </div>
               </div>
-              <Button size="sm" variant="outline" onClick={() => setEditing({ ...q, age_group: q.age_group ?? "all" })}>{en ? "Edit" : "አስተካክል"}</Button>
+              <Button size="sm" variant="outline" onClick={() => setEditing({ ...q, age_groups: normalizeAgeGroups(q), age_group: q.age_group ?? "all" })}>{en ? "Edit" : "አስተካክል"}</Button>
               {!q.is_core && <Button size="sm" variant="destructive" disabled={busy} onClick={() => void removeQuestion(q)}>{en ? "Delete" : "ሰርዝ"}</Button>}
             </div>
           </li>
@@ -207,7 +229,38 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
           {editing && <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div><Label>Field key</Label><Input value={editing.field_key} disabled={editing.is_core} onChange={e => setEditing({ ...editing, field_key: e.target.value })} /></div>
-              <div><Label>{en ? "Age group" : "የዕድሜ ቡድን"}</Label><Select value={editing.age_group ?? "all"} onValueChange={v => setEditing({ ...editing, age_group: v as QuestionAgeGroup })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{GROUPS.map(g => <SelectItem key={g.value} value={g.value}>{en ? g.en : g.am}</SelectItem>)}</SelectContent></Select></div>
+              <div>
+  <Label>{en ? "Age groups" : "የዕድሜ ቡድኖች"}</Label>
+  <div className="mt-2 grid grid-cols-2 gap-2">
+    {GROUPS.map(g => {
+      const selected = normalizeAgeGroups(editing).includes(g.value);
+      return (
+        <Button
+          key={g.value}
+          type="button"
+          size="sm"
+          variant={selected ? "default" : "outline"}
+          onClick={() => {
+            const current = normalizeAgeGroups(editing);
+            const next = g.value === "all"
+              ? ["all" as QuestionAgeGroup]
+              : Array.from(new Set([
+                  ...current.filter(v => v !== "all"),
+                  ...(selected ? [] : [g.value]),
+                ]));
+            if (!next.length) return;
+            setEditing({ ...editing, age_groups: next, age_group: next.length === 1 ? next[0] : "all" });
+          }}
+        >
+          {selected ? "✓ " : ""}{en ? g.en : g.am}
+        </Button>
+      );
+    })}
+  </div>
+  <p className="mt-1 text-xs text-muted-foreground">
+    {en ? "Select All, or select any combination of specific age groups." : "ሁሉንም ይምረጡ ወይም የተወሰኑ የዕድሜ ቡድኖችን በጥምረት ይምረጡ።"}
+  </p>
+</div>
             </div>
             <div><Label>{en ? "Question (Amharic)" : "ጥያቄ (አማርኛ)"}</Label><Textarea rows={3} value={editing.label_am} onChange={e => setEditing({ ...editing, label_am: e.target.value })} /></div>
             <div><Label>Question (English)</Label><Textarea rows={3} value={editing.label_en} onChange={e => setEditing({ ...editing, label_en: e.target.value })} /></div>
@@ -232,7 +285,7 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
 
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{en ? "Publish changes?" : "ለውጦቹን ማተም?"}</DialogTitle><DialogDescription>{en ? "New registrations will use this version. Existing registrations keep their original version." : "አዲስ ምዝገባዎች ይህን ቅጂ ይጠቀማሉ። ያሉ ምዝገባዎች የቀድሞ ቅጂያቸውን ይጠብቃሉ።"}</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setPublishOpen(false)}>{en ? "Cancel" : "ተወው"}</Button><Button disabled={busy} onClick={() => void publish()}>{en ? "Publish" : "አሳትም"}</Button></DialogFooter></DialogContent></Dialog>
 
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{en ? "Registration preview" : "የምዝገባ ቅድመ ዕይታ"}</DialogTitle></DialogHeader><div className="flex gap-2"><Button size="sm" variant={previewLang === "am" ? "default" : "outline"} onClick={() => setPreviewLang("am")}>🇪🇹 አማርኛ</Button><Button size="sm" variant={previewLang === "en" ? "default" : "outline"} onClick={() => setPreviewLang("en")}>🇬🇧 English</Button></div><ol className="space-y-2">{questions.filter(q => q.active).map((q, i) => <li key={q.id} className="rounded-xl border p-3"><div className="text-xs text-primary">{i + 1}. {GROUPS.find(g => g.value === (q.age_group ?? "all"))?.[previewLang === "en" ? "en" : "am"]}</div><div className="mt-1 text-sm">{questionLabel(q, previewLang)}</div>{q.input_type === "options" && <div className="mt-2 flex flex-wrap gap-2">{q.options.map((o, j) => <span key={j} className="rounded-full border px-3 py-1 text-xs">{optionLabel(o, previewLang)}</span>)}</div>}</li>)}</ol></DialogContent></Dialog>
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{en ? "Registration preview" : "የምዝገባ ቅድመ ዕይታ"}</DialogTitle></DialogHeader><div className="flex gap-2"><Button size="sm" variant={previewLang === "am" ? "default" : "outline"} onClick={() => setPreviewLang("am")}>🇪🇹 አማርኛ</Button><Button size="sm" variant={previewLang === "en" ? "default" : "outline"} onClick={() => setPreviewLang("en")}>🇬🇧 English</Button></div><ol className="space-y-2">{questions.filter(q => q.active).map((q, i) => <li key={q.id} className="rounded-xl border p-3"><div className="text-xs text-primary">{i + 1}. {ageGroupLabel(normalizeAgeGroups(q), previewLang === "en")}</div><div className="mt-1 text-sm">{questionLabel(q, previewLang)}</div>{q.input_type === "options" && <div className="mt-2 flex flex-wrap gap-2">{q.options.map((o, j) => <span key={j} className="rounded-full border px-3 py-1 text-xs">{optionLabel(o, previewLang)}</span>)}</div>}</li>)}</ol></DialogContent></Dialog>
     </section>
   );
 }
