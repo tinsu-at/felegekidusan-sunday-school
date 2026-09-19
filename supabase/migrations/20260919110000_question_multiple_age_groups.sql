@@ -21,23 +21,16 @@ ALTER TABLE public.registration_questions
   CHECK (
     jsonb_typeof(age_groups) = 'array'
     AND jsonb_array_length(age_groups) BETWEEN 1 AND 4
-    AND NOT EXISTS (
-      SELECT 1
-      FROM jsonb_array_elements_text(age_groups) AS g(value)
-      WHERE g.value NOT IN ('all', '7_13', '14_17', '18_plus')
-    )
-    AND ('all' = ANY (SELECT jsonb_array_elements_text(age_groups)) OR NOT ('all' = ANY (SELECT jsonb_array_elements_text(age_groups)) AND jsonb_array_length(age_groups) > 1))
+    AND age_groups <@ '["all", "7_13", "14_17", "18_plus"]'::jsonb
   );
 
--- New snapshots include both fields so older code remains readable while the
--- new multi-select behavior is available to current Telegram code.
+-- New snapshots include the multi-select field. Existing published versions are
+-- left untouched so historical registrations remain reproducible.
 WITH latest AS (
   SELECT COALESCE(MAX(version), 0) + 1 AS version
   FROM public.registration_question_versions
 ), snapshot AS (
-  SELECT jsonb_agg(
-    to_jsonb(q) ORDER BY q.position
-  ) AS questions
+  SELECT jsonb_agg(to_jsonb(q) ORDER BY q.position) AS questions
   FROM public.registration_questions q
   WHERE q.active = true
 )
