@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -53,6 +54,7 @@ const emptyDraft = (position: number): QuestionDraft => ({
   is_core: false,
   active: true,
   age_group: "all",
+  age_groups: ["all"],
 });
 
 function numberOrNull(value: string) {
@@ -95,7 +97,8 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
     }
     setBusy(true);
     try {
-      await saveFn({ data: { ...editing, field_key: editing.field_key.trim(), age_group: editing.age_group ?? "all" } });
+      const selectedAgeGroups = [...new Set(editing.age_groups ?? (editing.age_group ? [editing.age_group] : ["all"]))];
+      await saveFn({ data: { ...editing, field_key: editing.field_key.trim(), age_group: selectedAgeGroups[0] ?? "all", age_groups: selectedAgeGroups } });
       toast.success(en ? "Draft saved." : "ረቂቁ ተቀምጧል።");
       setEditing(null);
       await refresh();
@@ -180,12 +183,12 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
               <div className="min-w-0 flex-1">
                 <div className="font-medium">{questionLabel(q, en ? "en" : "am").split("\n")[0]}</div>
                 <div className="text-xs text-muted-foreground">
-                  {q.field_key} · {GROUPS.find(g => g.value === (q.age_group ?? "all"))?.[en ? "en" : "am"]} · {TYPE_LABEL[q.input_type as InputType]?.[en ? "en" : "am"] ?? q.input_type}
+                  {q.field_key} · {((q.age_groups?.length ? q.age_groups : [q.age_group ?? "all"]).map(v => GROUPS.find(g => g.value === v)?.[en ? "en" : "am"]).join(", "))} · {TYPE_LABEL[q.input_type as InputType]?.[en ? "en" : "am"] ?? q.input_type}
                   {q.required ? ` · ${en ? "Required" : "አስፈላጊ"}` : ` · ${en ? "Optional" : "አማራጭ"}`}
                   {!q.active ? ` · ${en ? "Inactive" : "የተዘጋ"}` : ""}
                 </div>
               </div>
-              <Button size="sm" variant="outline" onClick={() => setEditing({ ...q, age_group: q.age_group ?? "all" })}>{en ? "Edit" : "አስተካክል"}</Button>
+              <Button size="sm" variant="outline" onClick={() => setEditing({ ...q, age_group: q.age_group ?? "all", age_groups: q.age_groups?.length ? q.age_groups : [q.age_group ?? "all"] })}>{en ? "Edit" : "አስተካክል"}</Button>
               {!q.is_core && <Button size="sm" variant="destructive" disabled={busy} onClick={() => void removeQuestion(q)}>{en ? "Delete" : "ሰርዝ"}</Button>}
             </div>
           </li>
@@ -207,7 +210,7 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
           {editing && <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div><Label>Field key</Label><Input value={editing.field_key} disabled={editing.is_core} onChange={e => setEditing({ ...editing, field_key: e.target.value })} /></div>
-              <div><Label>{en ? "Age group" : "የዕድሜ ቡድን"}</Label><Select value={editing.age_group ?? "all"} onValueChange={v => setEditing({ ...editing, age_group: v as QuestionAgeGroup })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{GROUPS.map(g => <SelectItem key={g.value} value={g.value}>{en ? g.en : g.am}</SelectItem>)}</SelectContent></Select></div>
+              <div><Label>{en ? "Age groups" : "የዕድሜ ቡድኖች"}</Label><div className="mt-2 grid grid-cols-2 gap-2 rounded-lg border p-3">{GROUPS.map(g => { const selected = (editing.age_groups ?? [editing.age_group ?? "all"]).includes(g.value); return <label key={g.value} className="flex items-center gap-2 text-sm"><Checkbox checked={selected} onCheckedChange={(checked) => { let next = [...(editing.age_groups ?? [editing.age_group ?? "all"])]; if (g.value === "all" && checked) next = ["all"]; else if (g.value === "all" && !checked) next = next.filter(x => x !== "all"); else if (checked) next = [...new Set([...next.filter(x => x !== "all"), g.value])]; else next = next.filter(x => x !== g.value); if (!next.length) next = ["all"]; setEditing({ ...editing, age_group: next[0], age_groups: next }); }}>{en ? g.en : g.am}</Checkbox></label>; })}</div><p className="mt-1 text-xs text-muted-foreground">{en ? "Select one or more groups. All means every age group." : "አንድ ወይም ከዚያ በላይ ቡድን ይምረጡ። ለሁሉም ማለት ሁሉንም የዕድሜ ቡድኖች ማለት ነው።"}</p></div>
             </div>
             <div><Label>{en ? "Question (Amharic)" : "ጥያቄ (አማርኛ)"}</Label><Textarea rows={3} value={editing.label_am} onChange={e => setEditing({ ...editing, label_am: e.target.value })} /></div>
             <div><Label>Question (English)</Label><Textarea rows={3} value={editing.label_en} onChange={e => setEditing({ ...editing, label_en: e.target.value })} /></div>
@@ -232,7 +235,7 @@ export function QuestionsPanel({ isOwner }: { isOwner: boolean }) {
 
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{en ? "Publish changes?" : "ለውጦቹን ማተም?"}</DialogTitle><DialogDescription>{en ? "New registrations will use this version. Existing registrations keep their original version." : "አዲስ ምዝገባዎች ይህን ቅጂ ይጠቀማሉ። ያሉ ምዝገባዎች የቀድሞ ቅጂያቸውን ይጠብቃሉ።"}</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setPublishOpen(false)}>{en ? "Cancel" : "ተወው"}</Button><Button disabled={busy} onClick={() => void publish()}>{en ? "Publish" : "አሳትም"}</Button></DialogFooter></DialogContent></Dialog>
 
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{en ? "Registration preview" : "የምዝገባ ቅድመ ዕይታ"}</DialogTitle></DialogHeader><div className="flex gap-2"><Button size="sm" variant={previewLang === "am" ? "default" : "outline"} onClick={() => setPreviewLang("am")}>🇪🇹 አማርኛ</Button><Button size="sm" variant={previewLang === "en" ? "default" : "outline"} onClick={() => setPreviewLang("en")}>🇬🇧 English</Button></div><ol className="space-y-2">{questions.filter(q => q.active).map((q, i) => <li key={q.id} className="rounded-xl border p-3"><div className="text-xs text-primary">{i + 1}. {GROUPS.find(g => g.value === (q.age_group ?? "all"))?.[previewLang === "en" ? "en" : "am"]}</div><div className="mt-1 text-sm">{questionLabel(q, previewLang)}</div>{q.input_type === "options" && <div className="mt-2 flex flex-wrap gap-2">{q.options.map((o, j) => <span key={j} className="rounded-full border px-3 py-1 text-xs">{optionLabel(o, previewLang)}</span>)}</div>}</li>)}</ol></DialogContent></Dialog>
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{en ? "Registration preview" : "የምዝገባ ቅድመ ዕይታ"}</DialogTitle></DialogHeader><div className="flex gap-2"><Button size="sm" variant={previewLang === "am" ? "default" : "outline"} onClick={() => setPreviewLang("am")}>🇪🇹 አማርኛ</Button><Button size="sm" variant={previewLang === "en" ? "default" : "outline"} onClick={() => setPreviewLang("en")}>🇬🇧 English</Button></div><ol className="space-y-2">{questions.filter(q => q.active).map((q, i) => <li key={q.id} className="rounded-xl border p-3"><div className="text-xs text-primary">{i + 1}. {((q.age_groups?.length ? q.age_groups : [q.age_group ?? "all"]).map(v => GROUPS.find(g => g.value === v)?.[previewLang === "en" ? "en" : "am"]).join(", "))}</div><div className="mt-1 text-sm">{questionLabel(q, previewLang)}</div>{q.input_type === "options" && <div className="mt-2 flex flex-wrap gap-2">{q.options.map((o, j) => <span key={j} className="rounded-full border px-3 py-1 text-xs">{optionLabel(o, previewLang)}</span>)}</div>}</li>)}</ol></DialogContent></Dialog>
     </section>
   );
 }
