@@ -4,6 +4,7 @@ export const INPUT_TYPES = ["text", "phone", "ethiopian_date", "ethiopian_year",
 export type InputType = (typeof INPUT_TYPES)[number];
 export type RegistrationAgeGroup = "7_13" | "14_17" | "18_plus";
 export type QuestionAgeGroup = "all" | RegistrationAgeGroup;
+export type QuestionAgeGroups = QuestionAgeGroup[];
 export type QuestionOption = { value: string; label_am: string; label_en: string };
 export type QuestionConfig = {
   field_key: string;
@@ -22,8 +23,9 @@ export type QuestionConfig = {
   is_core: boolean;
   active: boolean;
   age_group: QuestionAgeGroup;
+  age_groups: QuestionAgeGroups;
 };
-export type QuestionDraft = Omit<QuestionConfig, "age_group"> & { id: string; age_group?: QuestionAgeGroup };
+export type QuestionDraft = Omit<QuestionConfig, "age_group" | "age_groups"> & { id: string; age_group?: QuestionAgeGroup; age_groups?: QuestionAgeGroups };
 export const CORE_FIELD_KEYS = ["full_name", "christian_name", "gender", "birth_date_ec"] as const;
 export function isCoreField(key: string) { return (CORE_FIELD_KEYS as readonly string[]).includes(key); }
 export function label(q: QuestionConfig, lang: Lang) { const text = lang === "en" ? q.label_en : q.label_am; return text.trim() || q.label_am || q.label_en || q.field_key; }
