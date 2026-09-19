@@ -133,7 +133,7 @@ export const updateRegistrationV2 = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertStaff(context);
     const { day, month, year } = parseBirthDate(data.birth_date_ec);
-    const age = ethiopianAge(year, month);
+    const age = ethiopianAge(year, month, day);
     if (!matchesGroup(age, data.age_group)) throw new Error(`Calculated Ethiopian age ${age ?? "unknown"} does not match the selected age group.`);
     const { data: before, error: readError } = await context.supabase
       .from("registrations")
