@@ -341,7 +341,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     if (step !== "confirm" || !currentGroup) return;
     const birth = validateEthiopianDate(answers["birth_date_ec"] ?? "");
     if (!birth) { const q = questions.find((x) => x.field_key === "birth_date_ec"); if (q) await sendMessage(chatId, questionError(q, lang), { inline_keyboard: [[{ text: "✏️ Edit Birth Date", callback_data: "edit_birth_date_ec" }]] }); return; }
-    const age = ethiopianAge(birth.year, birth.month);
+    const age = ethiopianAge(birth.year, birth.month, birth.day);
     const validGroup = age !== null && ((currentGroup === "7_13" && age >= 7 && age <= 13) || (currentGroup === "14_17" && age >= 14 && age <= 17) || (currentGroup === "18_plus" && age >= 18));
     if (!validGroup) { await ageMismatchMessage(chatId, lang, age ?? -1, currentGroup); return; }
 
