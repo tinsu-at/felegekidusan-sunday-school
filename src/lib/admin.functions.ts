@@ -159,7 +159,7 @@ export const updateRegistration = createServerFn({ method: "POST" })
         birth_day_ec: day!,
         birth_month_ec: month!,
         birth_year_ec: year!,
-        age_years: ethiopianAge(year, month),
+        age_years: ethiopianAge(year, month, day),
       })
       .eq("id", id);
     if (error) throw new Error("Could not update the registration");
@@ -441,7 +441,7 @@ export const exportRegistrationsCsv = createServerFn({ method: "GET" })
         const values = [
           row.registration_id,
           ...questionColumns.map((q) => valueForQuestion(row, q.key)),
-          row.age_years ?? ethiopianAge(row.birth_year_ec, row.birth_month_ec),
+          row.age_years ?? ethiopianAge(row.birth_year_ec, row.birth_month_ec, row.birth_day_ec),
           row.status,
           row.created_at,
         ];
