@@ -21,7 +21,11 @@ async function assertOwner(context: { supabase: { rpc: (fn: "has_role", args: { 
   if (!data) throw new Error("Forbidden");
 }
 
-function applicable(q: QuestionConfig, ageGroup: AgeGroup | null) { return q.age_group === "all" || q.age_group === ageGroup; }
+function applicable(q: QuestionConfig, ageGroup: AgeGroup | null) {
+  if (!ageGroup) return false;
+  const groups = Array.isArray(q.age_groups) && q.age_groups.length ? q.age_groups : [q.age_group];
+  return groups.includes("all") || groups.includes(ageGroup);
+}
 
 function answerValue(row: Record<string, unknown>, q: QuestionConfig): string {
   const key = q.field_key;
@@ -47,7 +51,7 @@ export const exportRegistrationsCsvV2 = createServerFn({ method: "GET" })
     const [{ data: rawRows, error }, { data: versions, error: versionError }, { data: draftQuestions, error: draftError }] = await Promise.all([
       supabaseAdmin.from("registrations").select("id, registration_id, full_name, christian_name, gender, birth_date_ec, birth_year_ec, birth_month_ec, birth_day_ec, mother_name, mother_phone, father_name, father_phone, extra_answers, age_years, age_group, question_version, status, created_at, archived_at").order("created_at", { ascending: false }),
       supabaseAdmin.from("registration_question_versions").select("version, questions").order("version", { ascending: true }),
-      supabaseAdmin.from("registration_questions").select("field_key, position, label_am, label_en, input_type, required, amharic_only, min_words, max_words, exact_words, error_am, error_en, options, is_core, active, age_group").order("position", { ascending: true }),
+      supabaseAdmin.from("registration_questions").select("field_key, position, label_am, label_en, input_type, required, amharic_only, min_words, max_words, exact_words, error_am, error_en, options, is_core, active, age_group, age_groups").order("position", { ascending: true }),
     ]);
     if (error) {
       console.error("[Registration Export] registrations query failed:", error);
