@@ -30,7 +30,9 @@ const questionSchema = z.object({
   options: z.array(z.object({ value: z.string().max(100), label_am: z.string().max(200), label_en: z.string().max(200) })).max(20),
   is_core: z.boolean(),
   active: z.boolean(),
-  age_group: z.enum(AGE_GROUPS),
+  age_groups: z.array(z.enum(AGE_GROUPS)).min(1).max(4),
+  // Legacy field is accepted from older clients and kept in the database.
+  age_group: z.enum(AGE_GROUPS).optional(),
 });
 
 async function assertOwner(context: { userId: string; claims?: Record<string, unknown>; supabase: unknown }) {
@@ -41,7 +43,7 @@ async function assertOwner(context: { userId: string; claims?: Record<string, un
   if (!data) throw new Error("Owner access required");
 }
 
-const columns = "id, field_key, position, label_am, label_en, input_type, required, amharic_only, min_words, max_words, exact_words, error_am, error_en, options, is_core, active, age_group";
+const columns = "id, field_key, position, label_am, label_en, input_type, required, amharic_only, min_words, max_words, exact_words, error_am, error_en, options, is_core, active, age_group, age_groups";
 
 export const listQuestionEditor = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -62,8 +64,19 @@ export const saveQuestionEditor = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertOwner(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { id, ...question } = data;
-    const payload = id ? { id, ...question } : question;
+    const { id, age_groups, ...question } = data;
+    const normalizedAgeGroups = age_groups.includes("all")
+      ? ["all"] as const
+      : Array.from(new Set(age_groups));
+    const legacyAgeGroup = normalizedAgeGroups.length === 1
+      ? normalizedAgeGroups[0]
+      : "all";
+    const payload = {
+      ...(id ? { id } : {}),
+      ...question,
+      age_groups: normalizedAgeGroups,
+      age_group: legacyAgeGroup,
+    };
     const { error } = await supabaseAdmin.from("registration_questions").upsert(payload, { onConflict: "field_key" });
     if (error) {
       console.error("[QuestionEditor] Could not save question", error);
