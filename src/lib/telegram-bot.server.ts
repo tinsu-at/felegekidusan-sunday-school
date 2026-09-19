@@ -119,8 +119,10 @@ function groupLabel(group: RegistrationAgeGroup, lang: Lang) {
   return lang === "am" ? hit?.am ?? group : hit?.en ?? group;
 }
 
-function questionGroup(q: QuestionConfig): string {
-  return String((q as QuestionConfig & { age_group?: string }).age_group ?? "all");
+function questionGroups(q: QuestionConfig): string[] {
+  const groups = (q as QuestionConfig & { age_groups?: unknown }).age_groups;
+  if (Array.isArray(groups) && groups.length) return groups.map(String);
+  return [String((q as QuestionConfig & { age_group?: string }).age_group ?? "all")];
 }
 
 function shortLabel(q: QuestionConfig, lang: Lang): string {
@@ -139,8 +141,8 @@ function displayValue(q: QuestionConfig, value: string | undefined, lang: Lang) 
 
 function applicableQuestions(all: QuestionConfig[], group: RegistrationAgeGroup) {
   return all.filter((q) => {
-    const g = questionGroup(q);
-    return g === "all" || g === group;
+    const groups = questionGroups(q);
+    return groups.includes("all") || groups.includes(group);
   }).sort((a, b) => a.position - b.position);
 }
 
