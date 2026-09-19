@@ -41,7 +41,18 @@ function asNumberOrNull(value: unknown): number | null {
 
 export function normalizeQuestion(raw: unknown, index: number): QuestionConfig {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const ageGroup = String(r["age_group"] ?? "all");
+  const rawAgeGroups = r["age_groups"];
+  const legacyAgeGroup = String(r["age_group"] ?? "all");
+  const ageGroups = Array.isArray(rawAgeGroups)
+    ? rawAgeGroups.map(String).filter((g): g is QuestionAgeGroup =>
+        g === "all" || g === "7_13" || g === "14_17" || g === "18_plus")
+    : [];
+  const normalizedAgeGroups: QuestionAgeGroup[] =
+    ageGroups.length > 0
+      ? (ageGroups.includes("all") ? ["all"] : Array.from(new Set(ageGroups)))
+      : (legacyAgeGroup === "7_13" || legacyAgeGroup === "14_17" || legacyAgeGroup === "18_plus"
+          ? [legacyAgeGroup]
+          : ["all"]);
   return {
     field_key: String(r["field_key"] ?? `question_${index + 1}`),
     position: Number(r["position"] ?? index + 1),
@@ -58,9 +69,8 @@ export function normalizeQuestion(raw: unknown, index: number): QuestionConfig {
     options: asOptions(r["options"]),
     is_core: r["is_core"] === true,
     active: r["active"] !== false,
-    ...(ageGroup === "7_13" || ageGroup === "14_17" || ageGroup === "18_plus"
-      ? { age_group: ageGroup }
-      : { age_group: "all" }),
+    age_groups: normalizedAgeGroups,
+    age_group: normalizedAgeGroups.length === 1 ? normalizedAgeGroups[0] : "all",
   } as QuestionConfig;
 }
 
