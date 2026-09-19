@@ -10,6 +10,7 @@ import {
 
 export type RegistrationAgeGroup = "7_13" | "14_17" | "18_plus";
 export type QuestionAgeGroup = "all" | RegistrationAgeGroup;
+export type QuestionAgeGroups = QuestionAgeGroup[];
 
 function asInputType(value: unknown): InputType {
   return (INPUT_TYPES as readonly string[]).includes(String(value))
@@ -41,7 +42,15 @@ function asNumberOrNull(value: unknown): number | null {
 
 export function normalizeQuestion(raw: unknown, index: number): QuestionConfig {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const ageGroup = String(r["age_group"] ?? "all");
+  const rawAgeGroups = r["age_groups"];
+  const parsedAgeGroups = Array.isArray(rawAgeGroups)
+    ? rawAgeGroups.map(String).filter((g): g is QuestionAgeGroup => ["all", "7_13", "14_17", "18_plus"].includes(g))
+    : [];
+  const legacyAgeGroup = String(r["age_group"] ?? "all");
+  const ageGroups: QuestionAgeGroup[] = parsedAgeGroups.length
+    ? [...new Set(parsedAgeGroups)]
+    : (["all", "7_13", "14_17", "18_plus"].includes(legacyAgeGroup) ? [legacyAgeGroup as QuestionAgeGroup] : ["all"]);
+  const ageGroup = ageGroups.includes("all") ? "all" : ageGroups[0];
   return {
     field_key: String(r["field_key"] ?? `question_${index + 1}`),
     position: Number(r["position"] ?? index + 1),
@@ -58,9 +67,8 @@ export function normalizeQuestion(raw: unknown, index: number): QuestionConfig {
     options: asOptions(r["options"]),
     is_core: r["is_core"] === true,
     active: r["active"] !== false,
-    ...(ageGroup === "7_13" || ageGroup === "14_17" || ageGroup === "18_plus"
-      ? { age_group: ageGroup }
-      : { age_group: "all" }),
+    age_group: ageGroup,
+    age_groups: ageGroups,
   } as QuestionConfig;
 }
 
