@@ -371,8 +371,73 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       extra_answers: extras,
       status: "pending",
     };
-    const { data: inserted, error } = await supabaseAdmin.from("registrations").insert(payload as never).select("registration_id, created_at").single();
-    if (error || !inserted) { console.error("Failed to save registration"); await sendMessage(chatId, T[lang].saveFailed); return; }
+
+    // Duplicate protection is enforced by the database unique constraint on
+    // the normalized student identity. This check provides a friendly message
+    // while the database remains the final source of truth.
+    const { data: existing } = await supabaseAdmin
+      .from("registrations")
+      .select("registration_id")
+      .eq("full_name", payload.full_name)
+      .eq("christian_name", payload.christian_name)
+      .eq("gender", payload.gender)
+      .eq("birth_date_ec", payload.birth_date_ec)
+      .eq("mother_phone", payload.mother_phone)
+      .eq("father_phone", payload.father_phone)
+      .limit(1)
+      .maybeSingle();
+
+    if (existing?.registration_id) {
+      await clearSession();
+      await sendMessage(
+        chatId,
+        lang === "am"
+          ? `⚠️ ይህ ተማሪ አስቀድሞ ተመዝግቧል።\\n\\nየምዝገባ ቁጥር፦ ${existing.registration_id}\\n\\nመረጃውን ማስተካከል ከፈለጉ እባክዎ አስተዳዳሪን ያነጋግሩ።`
+          : `⚠️ This student is already registered.\\n\\nRegistration ID: ${existing.registration_id}\\n\\nIf the information needs to be corrected, please contact an administrator.`,
+      );
+      await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
+      return;
+    }
+
+    const { data: inserted, error } = await supabaseAdmin
+      .from("registrations")
+      .insert(payload as never)
+      .select("registration_id, created_at")
+      .single();
+
+    if (error || !inserted) {
+      // 23505 is PostgreSQL's unique-violation code. Keep this fallback
+      // because another registration could be inserted between the check above
+      // and this insert.
+      if (error?.code === "23505") {
+        const { data: duplicate } = await supabaseAdmin
+          .from("registrations")
+          .select("registration_id")
+          .eq("full_name", payload.full_name)
+          .eq("christian_name", payload.christian_name)
+          .eq("gender", payload.gender)
+          .eq("birth_date_ec", payload.birth_date_ec)
+          .eq("mother_phone", payload.mother_phone)
+          .eq("father_phone", payload.father_phone)
+          .limit(1)
+          .maybeSingle();
+
+        await clearSession();
+        await sendMessage(
+          chatId,
+          duplicate?.registration_id
+            ? (lang === "am"
+                ? `⚠️ ይህ ተማሪ አስቀድሞ ተመዝግቧል።\\n\\nየምዝገባ ቁጥር፦ ${duplicate.registration_id}\\n\\nመረጃውን ማስተካከል ከፈለጉ እባክዎ አስተዳዳሪን ያነጋግሩ።`
+                : `⚠️ This student is already registered.\\n\\nRegistration ID: ${duplicate.registration_id}\\n\\nIf the information needs to be corrected, please contact an administrator.`)
+            : T[lang].saveFailed,
+        );
+        if (duplicate?.registration_id) await sendMessage(chatId, T[lang].welcome, startKeyboard(lang));
+        return;
+      }
+      console.error("Failed to save registration", error);
+      await sendMessage(chatId, T[lang].saveFailed);
+      return;
+    }
     await clearSession();
     await sendMessage(chatId, T[lang].success(inserted.registration_id));
     await sendMessage(chatId, lang === "am" ? "የሚቀጥለውን ተማሪ ለመመዝገብ ከታች ይምረጡ።" : "You can now register another student.", registerAnotherKeyboard(lang));
