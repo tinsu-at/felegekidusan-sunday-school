@@ -190,7 +190,7 @@ export function AdminSettingsPanel({
                 const res = await doAddAccount({
                   data: {
                     email: String(fd.get("account_email") ?? ""),
-                    role: String(fd.get("account_role") ?? "admin") as "admin",
+                    role: String(fd.get("account_role") ?? "admin") as "admin" | "owner",
                   },
                 });
                 toast.success(res.invited ? o.invited : o.added);
@@ -301,7 +301,7 @@ export function AdminSettingsPanel({
                   telegram_user_id: Number(form.get("telegram_user_id")),
                   ...(chatRaw ? { telegram_chat_id: Number(chatRaw) } : {}),
                   label: String(form.get("label") ?? ""),
-                  role: String(form.get("role") ?? "admin") as "admin",
+                  role: String(form.get("role") ?? "admin") as "admin" | "owner",
                   active: true,
                 },
               });
