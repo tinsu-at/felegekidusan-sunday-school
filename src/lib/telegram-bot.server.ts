@@ -99,6 +99,23 @@ async function sendMessage(chatId: number, text: string, keyboard?: unknown) {
   await telegram("sendMessage", { chat_id: chatId, text, ...(keyboard ? { reply_markup: keyboard } : {}) });
 }
 
+export async function notifyOwners(lines: string[]) {
+  const text = lines.join("\n");
+  const targets = new Set<string>();
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("bot_admins")
+      .select("telegram_chat_id")
+      .eq("role", "owner")
+      .eq("active", true);
+    for (const row of data ?? []) if (row.telegram_chat_id) targets.add(String(row.telegram_chat_id));
+  } catch { console.error("Owner list could not be loaded for notifications"); }
+  for (const chatId of targets) {
+    try { await telegram("sendMessage", { chat_id: chatId, text }); } catch { console.error("Owner notification could not be delivered"); }
+  }
+}
+
 async function notifyAdmins(lines: string[]) {
   const text = lines.join("\n");
   const targets = new Set<string>();
