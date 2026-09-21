@@ -492,6 +492,7 @@ export const listDashboardAdmins = createServerFn({ method: "GET" })
       supabaseAdmin
         .from("user_roles")
         .select("user_id, role, created_at")
+        .in("role", ["owner", "admin"])
         .order("created_at", { ascending: true }),
       emailIndex(supabaseAdmin as never),
     ]);
@@ -507,7 +508,7 @@ export const listDashboardAdmins = createServerFn({ method: "GET" })
         user_id: row.user_id,
         email,
         role,
-        isOwnerAccount: OWNER_EMAILS.includes(email as never),
+        isOwnerAccount: OWNER_EMAILS.includes(email as never) || row.role === "owner",
         created_at: current?.created_at ?? row.created_at,
       });
     }
