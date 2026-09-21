@@ -5,6 +5,15 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { ethiopianAge, validateEthiopianDate } from "@/lib/question-config";
 import { isOwnerEmail } from "@/lib/owner-auth";
 
+async function notifyOwnersOfChange(lines: string[]) {
+  try {
+    const { notifyOwners } = await import("@/lib/telegram-bot.server");
+    await notifyOwners(lines);
+  } catch (error) {
+    console.error("Owner change notification failed", error);
+  }
+}
+
 const AGE_GROUPS = ["7_13", "14_17", "18_plus"] as const;
 type AgeGroup = (typeof AGE_GROUPS)[number];
 
@@ -181,6 +190,7 @@ export const updateRegistrationV2 = createServerFn({ method: "POST" })
         });
       if (auditError) throw new Error("Registration updated, but audit history could not be saved");
     }
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Registration edited", "Registration: " + data.id, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString(), "", "Changes: " + JSON.stringify(changes)]);
     return { ok: true, age_years: age };
   });
 
@@ -204,6 +214,7 @@ export const setRegistrationStatusV2 = createServerFn({ method: "POST" })
         });
       if (auditError) throw new Error("Status changed, but audit history could not be saved");
     }
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Status changed", "Registration: " + data.id, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString(), "Status: " + (before?.status ?? "unknown") + " → " + data.status]);
     return { ok: true };
   });
 
