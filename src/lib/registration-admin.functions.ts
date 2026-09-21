@@ -48,6 +48,7 @@ export type RegistrationAuditEntry = {
   id: string;
   registration_id: string;
   actor_user_id: string;
+  actor_email: string | null;
   action: string;
   changes: Record<string, unknown>;
   created_at: string;
@@ -243,7 +244,18 @@ export const listRegistrationAuditV2 = createServerFn({ method: "GET" })
     await assertStaff(context);
     const { data: rows, error } = await context.supabase.from("registration_audit_history").select("id, registration_id, actor_user_id, action, changes, created_at").eq("registration_id", data.registration_id).order("created_at", { ascending: false });
     if (error) throw new Error("Could not load audit history");
-    return (rows ?? []) as RegistrationAuditEntry[];
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const emails = new Map<string, string>();
+    for (let page = 1; page <= 10; page++) {
+      const { data } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+      const users = data?.users ?? [];
+      for (const user of users) if (user.email) emails.set(user.id, user.email);
+      if (users.length < 200) break;
+    }
+    return (rows ?? []).map((row) => ({
+      ...row,
+      actor_email: emails.get(row.actor_user_id) ?? null,
+    })) as RegistrationAuditEntry[];
   });
 
 export const getRegistrationHistoricalQuestionsV2 = createServerFn({ method: "GET" })
