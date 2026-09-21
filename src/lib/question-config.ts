@@ -63,15 +63,18 @@ function currentEthiopianDate() {
 }
 
 export function currentEthiopianYear() { return currentEthiopianDate().year; }
-export function ethiopianAge(birthYear: number | null | undefined, birthMonth?: number | null, birthDay?: number | null) {
+export function ethiopianAge(birthYear: number | null | undefined, birthMonth?: number | null, _birthDay?: number | null) {
   if (!birthYear || birthYear < 1900) return null;
   const now = currentEthiopianDate();
+
+  // Registration age is defined by the Ethiopian calendar year/month rule
+  // used by the database validation trigger: subtract one only for births
+  // in months 7–13. The exact birth day must not change the calculated age.
   let age = now.year - birthYear;
-  if (birthMonth != null && birthDay != null) {
-    if (birthMonth > now.month || (birthMonth === now.month && birthDay > now.day)) age -= 1;
-  } else if (birthMonth != null && birthMonth > now.month) {
+  if (birthMonth != null && birthMonth >= 7 && birthMonth <= 13) {
     age -= 1;
   }
+
   return age < 0 ? null : age;
 }
 const ETHIOPIC_WORD = /^[\u1200-\u137F]+$/;
