@@ -206,6 +206,15 @@ export const deleteRegistration = createServerFn({ method: "POST" })
 // ---------------------------------------------------------------------------
 
 /** Throws unless the caller holds the owner role. */
+async function notifyOwnersOfChange(lines: string[]) {
+  try {
+    const { notifyOwners } = await import("@/lib/telegram-bot.server");
+    await notifyOwners(lines);
+  } catch (error) {
+    console.error("Owner change notification failed", error);
+  }
+}
+
 async function assertOwner(context: {
   supabase: {
     rpc: (
@@ -273,6 +282,7 @@ export const saveBotAdmin = createServerFn({ method: "POST" })
       { onConflict: "telegram_user_id" },
     );
     if (error) throw new Error("Could not save the admin");
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Telegram admin changed", "Telegram ID: " + data.telegram_user_id, "Role: " + data.role, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString()]);
     return { ok: true };
   });
 
@@ -291,6 +301,7 @@ export const removeBotAdmin = createServerFn({ method: "POST" })
       .delete()
       .eq("id", data.id);
     if (error) throw new Error("Could not remove the admin");
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Telegram admin removed", "Admin ID: " + data.id, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString()]);
     return { ok: true };
   });
 
@@ -345,6 +356,7 @@ export const saveHelpContent = createServerFn({ method: "POST" })
       .from("help_content")
       .upsert({ ...data }, { onConflict: "lang" });
     if (error) throw new Error("Could not save the help content");
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Help content changed", "Language: " + data.lang, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString()]);
     return { ok: true };
   });
 
@@ -364,6 +376,7 @@ export const resetHelpContent = createServerFn({ method: "POST" })
       .from("help_content")
       .upsert({ ...defaults }, { onConflict: "lang" });
     if (error) throw new Error("Could not reset the help content");
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Help content reset", "Language: " + data.lang, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString()]);
     return { ok: true, content: defaults };
   });
 
@@ -545,6 +558,7 @@ export const addDashboardAdmin = createServerFn({ method: "POST" })
       { onConflict: "user_id,role" },
     );
     if (error) throw new Error("Could not add dashboard access");
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Dashboard access granted", "Email: " + data.email, "Role: " + data.role, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString()]);
     return { ok: true };
   });
 
@@ -565,6 +579,7 @@ export const removeDashboardAdmin = createServerFn({ method: "POST" })
       .eq("user_id", data.user_id)
       .in("role", ["admin", "owner"]);
     if (error) throw new Error("Could not remove dashboard access");
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Dashboard access removed", "User ID: " + data.user_id, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString()]);
     return { ok: true };
   });
 
@@ -648,6 +663,7 @@ export const saveQuestionConfig = createServerFn({ method: "POST" })
       .from("registration_questions")
       .upsert({ ...data }, { onConflict: "field_key" });
     if (error) throw new Error("Could not save the question");
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Registration question changed", "Question: " + data.field_key, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString()]);
     return { ok: true };
   });
 
@@ -673,6 +689,7 @@ export const deleteQuestionConfig = createServerFn({ method: "POST" })
       .delete()
       .eq("id", data.id);
     if (error) throw new Error("Could not delete the question");
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Registration question deleted", "Question ID: " + data.id, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString()]);
     return { ok: true };
   });
 
@@ -705,5 +722,6 @@ export const publishQuestions = createServerFn({ method: "POST" })
         published_by: context.userId,
       });
     if (insertError) throw new Error("Could not publish the questions");
+    await notifyOwnersOfChange(["🔔 Admin activity / የአስተዳደር ለውጥ", "", "Action: Registration questions published", "Version: " + nextVersion, "By: " + (context.claims?.["email"] ? String(context.claims["email"]) : context.userId), "Time: " + new Date().toISOString()]);
     return { ok: true, version: nextVersion };
   });
