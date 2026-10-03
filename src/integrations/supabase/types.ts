@@ -398,6 +398,41 @@ export type Database = {
         }
         Relationships: []
       }
+      registration_audit_history: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          changes: Json
+          created_at: string
+          id: string
+          registration_id: string
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          changes?: Json
+          created_at?: string
+          id?: string
+          registration_id: string
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          changes?: Json
+          created_at?: string
+          id?: string
+          registration_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "registration_audit_history_registration_id_fkey"
+            columns: ["registration_id"]
+            isOneToOne: false
+            referencedRelation: "registrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       registration_question_versions: {
         Row: {
           created_at: string
@@ -428,6 +463,8 @@ export type Database = {
       registration_questions: {
         Row: {
           active: boolean
+          age_group: string
+          age_groups: Json
           amharic_only: boolean
           created_at: string
           error_am: string
@@ -448,6 +485,8 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          age_group?: string
+          age_groups?: Json
           amharic_only?: boolean
           created_at?: string
           error_am?: string
@@ -468,6 +507,8 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          age_group?: string
+          age_groups?: Json
           amharic_only?: boolean
           created_at?: string
           error_am?: string
@@ -490,8 +531,10 @@ export type Database = {
       }
       registration_sessions: {
         Row: {
+          age_group: string | null
           answers: Json
           created_at: string
+          question_version: number | null
           step: string
           telegram_chat_id: number
           telegram_user_id: number
@@ -499,8 +542,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          age_group?: string | null
           answers?: Json
           created_at?: string
+          question_version?: number | null
           step?: string
           telegram_chat_id: number
           telegram_user_id: number
@@ -508,8 +553,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          age_group?: string | null
           answers?: Json
           created_at?: string
+          question_version?: number | null
           step?: string
           telegram_chat_id?: number
           telegram_user_id?: number
@@ -520,7 +567,10 @@ export type Database = {
       }
       registrations: {
         Row: {
+          age_group: string | null
           age_years: number | null
+          archived_at: string | null
+          archived_by: string | null
           birth_date_ec: string | null
           birth_day_ec: number | null
           birth_month_ec: number | null
@@ -535,6 +585,7 @@ export type Database = {
           id: string
           mother_name: string
           mother_phone: string
+          question_version: number | null
           registration_id: string
           status: string
           telegram_chat_id: number
@@ -543,7 +594,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          age_group?: string | null
           age_years?: number | null
+          archived_at?: string | null
+          archived_by?: string | null
           birth_date_ec?: string | null
           birth_day_ec?: number | null
           birth_month_ec?: number | null
@@ -558,6 +612,7 @@ export type Database = {
           id?: string
           mother_name: string
           mother_phone: string
+          question_version?: number | null
           registration_id?: string
           status?: string
           telegram_chat_id: number
@@ -566,7 +621,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          age_group?: string | null
           age_years?: number | null
+          archived_at?: string | null
+          archived_by?: string | null
           birth_date_ec?: string | null
           birth_day_ec?: number | null
           birth_month_ec?: number | null
@@ -581,6 +639,7 @@ export type Database = {
           id?: string
           mother_name?: string
           mother_phone?: string
+          question_version?: number | null
           registration_id?: string
           status?: string
           telegram_chat_id?: number

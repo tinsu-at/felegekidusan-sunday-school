@@ -2,6 +2,7 @@
 import { helpMessage } from "@/lib/help-content.server";
 import {
   ethiopianAge,
+  ethiopianEligibilityAge,
   isCoreField,
   label as questionLabel,
   optionLabel,
@@ -361,8 +362,9 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     const birth = validateEthiopianDate(answers["birth_date_ec"] ?? "");
     if (!birth) { const q = questions.find((x) => x.field_key === "birth_date_ec"); if (q) await sendMessage(chatId, questionError(q, lang), { inline_keyboard: [[{ text: "✏️ Edit Birth Date", callback_data: "edit_birth_date_ec" }]] }); return; }
     const age = ethiopianAge(birth.year, birth.month, birth.day);
-    const validGroup = age !== null && ((currentGroup === "7_13" && age >= 7 && age <= 13) || (currentGroup === "14_17" && age >= 14 && age <= 17) || (currentGroup === "18_plus" && age >= 18));
-    if (!validGroup) { await ageMismatchMessage(chatId, lang, age ?? -1, currentGroup); return; }
+    const eligibilityAge = ethiopianEligibilityAge(birth.year, birth.month, birth.day);
+    const validGroup = eligibilityAge !== null && ((currentGroup === "7_13" && eligibilityAge >= 7 && eligibilityAge <= 13) || (currentGroup === "14_17" && eligibilityAge >= 14 && eligibilityAge <= 17) || (currentGroup === "18_plus" && eligibilityAge >= 18));
+    if (!validGroup) { await ageMismatchMessage(chatId, lang, eligibilityAge ?? -1, currentGroup); return; }
 
     const extras: Record<string, string> = {};
     for (const q of questions) { const value = answers[q.field_key]; if (!isCoreField(q.field_key) && value) extras[q.field_key] = value; }
