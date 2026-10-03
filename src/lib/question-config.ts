@@ -51,30 +51,49 @@ function jdnToEthiopian(jdn: number) {
   return { year, month: Math.floor(n / 30) + 1, day: (n % 30) + 1 };
 }
 
-function currentEthiopianDate() {
+export function gregorianToEthiopian(year: number, month: number, day: number) {
+  return jdnToEthiopian(gregorianToJdn(year, month, day));
+}
+
+export function currentEthiopianDate(now: Date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Africa/Addis_Ababa",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date());
+  }).formatToParts(now);
   const values = Object.fromEntries(parts.filter((p) => p.type !== "literal").map((p) => [p.type, Number(p.value)]));
-  return jdnToEthiopian(gregorianToJdn(values.year, values.month, values.day));
+  return gregorianToEthiopian(values.year, values.month, values.day);
 }
 
+type EthDate = { year: number; month: number; day: number };
+
 export function currentEthiopianYear() { return currentEthiopianDate().year; }
-export function ethiopianAge(birthYear: number | null | undefined, birthMonth?: number | null, _birthDay?: number | null) {
+
+/**
+ * Actual age in completed Ethiopian years: increases on the birthday itself
+ * (same Ethiopian month and day). Used for display/storage of age_years.
+ */
+export function ethiopianAge(birthYear: number | null | undefined, birthMonth?: number | null, birthDay?: number | null, today: EthDate = currentEthiopianDate()) {
   if (!birthYear || birthYear < 1900) return null;
-  const now = currentEthiopianDate();
-
-  // Registration age is defined by the Ethiopian calendar year/month rule
-  // used by the database validation trigger: subtract one only for births
-  // in months 7–13. The exact birth day must not change the calculated age.
-  let age = now.year - birthYear;
-  if (birthMonth != null && birthMonth >= 7 && birthMonth <= 13) {
-    age -= 1;
+  let age = today.year - birthYear;
+  if (birthMonth != null) {
+    const day = birthDay ?? 1;
+    const passed = today.month > birthMonth || (today.month === birthMonth && today.day >= day);
+    if (!passed) age -= 1;
   }
+  return age < 0 ? null : age;
+}
 
+/**
+ * Age-group eligibility age (existing rule, unchanged): current Ethiopian
+ * year − birth year, minus one only for birth months 7–13; day is ignored.
+ * Used only to check which age group a student may register in.
+ */
+export function ethiopianEligibilityAge(birthYear: number | null | undefined, birthMonth?: number | null, _birthDay?: number | null, today: EthDate = currentEthiopianDate()) {
+  if (!birthYear || birthYear < 1900) return null;
+  let age = today.year - birthYear;
+  if (birthMonth != null && birthMonth >= 7 && birthMonth <= 13) age -= 1;
   return age < 0 ? null : age;
 }
 const ETHIOPIC_WORD = /^[\u1200-\u137F]+$/;
