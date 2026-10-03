@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { ethiopianAge, validateEthiopianDate } from "@/lib/question-config";
+import { ethiopianAge, ethiopianEligibilityAge, validateEthiopianDate } from "@/lib/question-config";
 import { isOwnerEmail } from "@/lib/owner-auth";
 
 async function notifyOwnersOfChange(lines: string[]) {
@@ -144,7 +144,8 @@ export const updateRegistrationV2 = createServerFn({ method: "POST" })
     await assertStaff(context);
     const { day, month, year } = parseBirthDate(data.birth_date_ec);
     const age = ethiopianAge(year, month, day);
-    if (!matchesGroup(age, data.age_group)) throw new Error(`Calculated Ethiopian age ${age ?? "unknown"} does not match the selected age group.`);
+    const eligibilityAge = ethiopianEligibilityAge(year, month, day);
+    if (!matchesGroup(eligibilityAge, data.age_group)) throw new Error(`Calculated Ethiopian age ${eligibilityAge ?? "unknown"} does not match the selected age group.`);
     const { data: before, error: readError } = await context.supabase
       .from("registrations")
       .select("full_name, christian_name, gender, age_group, birth_date_ec, age_years, mother_name, mother_phone, father_name, father_phone, status")
