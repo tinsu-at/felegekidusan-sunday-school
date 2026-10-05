@@ -77,7 +77,7 @@ export const saveQuestionEditor = createServerFn({ method: "POST" })
       age_groups: normalizedAgeGroups,
       age_group: legacyAgeGroup,
     };
-    const { error } = await supabaseAdmin.from("registration_questions").upsert(payload, { onConflict: "field_key" });
+    const { error } = await supabaseAdmin.from("registration_questions").upsert(payload as never, { onConflict: "field_key" });
     if (error) {
       console.error("[QuestionEditor] Could not save question", error);
       throw new Error(`Could not save question: ${error.message}`);
