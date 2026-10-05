@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Json } from "@/integrations/supabase/types";
+import { assertStaff } from "@/lib/staff-access.server";
 import { ethiopianAge, ethiopianEligibilityAge, validateEthiopianDate } from "@/lib/question-config";
 import { isOwnerEmail } from "@/lib/owner-auth";
 
@@ -56,10 +58,10 @@ export type RegistrationHistoricalQuestion = {
 export type RegistrationAuditEntry = {
   id: string;
   registration_id: string;
-  actor_user_id: string;
+  actor_user_id: string | null;
   actor_email: string | null;
   action: string;
-  changes: Record<string, unknown>;
+  changes: { [key: string]: string | number | boolean | null | { from: Json | undefined; to: Json | undefined } };
   created_at: string;
 };
 
@@ -86,14 +88,6 @@ function isQuestionSnapshot(value: unknown): value is QuestionSnapshot {
 }
 
 
-async function assertStaff(context: { userId: string; claims?: Record<string, unknown>; supabase: { rpc: (name: "has_role", args: Record<string, unknown>) => PromiseLike<{ data: unknown }> } }) {
-  if (isOwnerEmail(context.claims?.["email"])) return;
-  const [{ data: admin }, { data: owner }] = await Promise.all([
-    context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" }),
-    context.supabase.rpc("has_role", { _user_id: context.userId, _role: "owner" }),
-  ]);
-  if (!admin && !owner) throw new Error("Forbidden");
-}
 
 const updateSchema = z.object({
   id: z.string().uuid(),
@@ -187,7 +181,7 @@ export const updateRegistrationV2 = createServerFn({ method: "POST" })
           registration_id: data.id,
           actor_user_id: context.userId,
           action: "admin_update",
-          changes,
+          changes: changes as Json,
         });
       if (auditError) throw new Error("Registration updated, but audit history could not be saved");
     }
@@ -266,8 +260,8 @@ export const listRegistrationAuditV2 = createServerFn({ method: "GET" })
     }
     return (rows ?? []).map((row) => ({
       ...row,
-      actor_email: emails.get(row.actor_user_id) ?? null,
-    })) as RegistrationAuditEntry[];
+      actor_email: row.actor_user_id ? emails.get(row.actor_user_id) ?? null : null,
+    })) as unknown as RegistrationAuditEntry[];
   });
 
 export const getRegistrationHistoricalQuestionsV2 = createServerFn({ method: "GET" })

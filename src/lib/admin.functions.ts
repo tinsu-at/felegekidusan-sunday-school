@@ -5,6 +5,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { ethiopianAge, label as questionLabel } from "@/lib/question-config";
 import { publishedQuestions } from "@/lib/question-config.server";
 import { OWNER_EMAIL, isOwnerEmail } from "@/lib/owner-auth";
+import { assertStaff } from "@/lib/staff-access.server";
 
 const REG_COLUMNS =
   "id, registration_id, full_name, christian_name, gender, birth_date_ec, birth_year_ec, birth_month_ec, birth_day_ec, mother_name, mother_phone, father_name, father_phone, extra_answers, age_years, status, created_at";
@@ -521,7 +522,7 @@ export const listDashboardAdmins = createServerFn({ method: "GET" })
         user_id: row.user_id,
         email,
         role,
-        isOwnerAccount: OWNER_EMAILS.includes(email as never) || row.role === "owner",
+        isOwnerAccount: isOwnerEmail(email) || row.role === "owner",
         created_at: current?.created_at ?? row.created_at,
       });
     }
@@ -618,7 +619,7 @@ export type AdminQuestion = {
   exact_words: number | null;
   error_am: string;
   error_en: string;
-  options: unknown;
+  options: { value: string; label_am: string; label_en: string }[];
   is_core: boolean;
   active: boolean;
 };
@@ -645,7 +646,7 @@ export const listQuestionConfig = createServerFn({ method: "GET" })
       ]);
     if (draftError || pubError) throw new Error("Could not load the question configuration");
     return {
-      draft: (draft ?? []) as AdminQuestion[],
+      draft: (draft ?? []) as unknown as AdminQuestion[],
       publishedVersion: published?.version ?? null,
       publishedAt: published?.created_at ?? null,
     };

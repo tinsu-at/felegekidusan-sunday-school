@@ -14,20 +14,25 @@ export function isOwnerEmail(email: unknown): boolean {
 }
 
 type Ctx = {
-  supabase: {
-    rpc: (
-      fn: "has_role",
-      args: { _user_id: string; _role: "owner" | "admin" },
-    ) => PromiseLike<{ data: unknown }>;
-  };
+  supabase: unknown;
   userId: string;
   claims?: Record<string, unknown>;
 };
 
+type HasRoleRpc = (
+  fn: "has_role",
+  args: { _user_id: string; _role: "owner" | "admin" },
+) => PromiseLike<{ data: unknown }>;
+
+function rpcOf(context: Ctx): HasRoleRpc {
+  const client = context.supabase as { rpc: HasRoleRpc };
+  return client.rpc.bind(client);
+}
+
 /** Throws unless the caller holds the owner role (or is the owner account). */
 export async function assertOwner(context: Ctx): Promise<void> {
   if (isOwnerEmail(context.claims?.["email"])) return;
-  const { data } = await context.supabase.rpc("has_role", {
+  const { data } = await rpcOf(context)("has_role", {
     _user_id: context.userId,
     _role: "owner",
   });
@@ -38,11 +43,11 @@ export async function assertOwner(context: Ctx): Promise<void> {
 export async function assertStaff(context: Ctx): Promise<void> {
   if (isOwnerEmail(context.claims?.["email"])) return;
   const [{ data: admin }, { data: owner }] = await Promise.all([
-    context.supabase.rpc("has_role", {
+    rpcOf(context)("has_role", {
       _user_id: context.userId,
       _role: "admin",
     }),
-    context.supabase.rpc("has_role", {
+    rpcOf(context)("has_role", {
       _user_id: context.userId,
       _role: "owner",
     }),
