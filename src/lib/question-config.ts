@@ -32,7 +32,7 @@ export type QuestionDraft = Omit<QuestionConfig, "age_groups" | "age_group"> & {
 };
 export const CORE_FIELD_KEYS = ["full_name", "christian_name", "gender", "birth_date_ec"] as const;
 export function isCoreField(key: string) { return (CORE_FIELD_KEYS as readonly string[]).includes(key); }
-export function label(q: QuestionConfig, lang: Lang) { const text = lang === "en" ? q.label_en : q.label_am; return text.trim() || q.label_am || q.label_en || q.field_key; }
+export function label(q: Pick<QuestionConfig, "label_am" | "label_en" | "field_key">, lang: Lang) { const text = lang === "en" ? q.label_en : q.label_am; return text.trim() || q.label_am || q.label_en || q.field_key; }
 export function optionLabel(o: QuestionOption, lang: Lang) { return (lang === "en" ? o.label_en : o.label_am) || o.value; }
 const ETHIOPIC_DIGITS: Record<string, string> = { "፩": "1", "፪": "2", "፫": "3", "፬": "4", "፭": "5", "፮": "6", "፯": "7", "፰": "8", "፱": "9" };
 export function normalizeDigits(input: string) { return input.split("").map((c) => ETHIOPIC_DIGITS[c] ?? c).join("").trim(); }

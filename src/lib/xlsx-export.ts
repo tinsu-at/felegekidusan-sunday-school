@@ -56,7 +56,7 @@ const zipStore = (files: Array<{ name: string; data: Uint8Array }>) => {
   }
   const centralOffset = offset; const centralSize = central.reduce((total, entry) => total + entry.length, 0); const end = new Uint8Array(22); const endView = new DataView(end.buffer);
   writeU32(endView, 0, 0x06054b50); writeU16(endView, 4, 0); writeU16(endView, 6, 0); writeU16(endView, 8, files.length); writeU16(endView, 10, files.length); writeU32(endView, 12, centralSize); writeU32(endView, 16, centralOffset); writeU16(endView, 20, 0);
-  return new Blob([...parts, ...central, end], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  return new Blob([...parts, ...central, end] as BlobPart[], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 };
 
 const makeWorksheetXml = (rows: string[][]) => {

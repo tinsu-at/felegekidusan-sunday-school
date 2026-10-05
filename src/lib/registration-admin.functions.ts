@@ -56,10 +56,10 @@ export type RegistrationHistoricalQuestion = {
 export type RegistrationAuditEntry = {
   id: string;
   registration_id: string;
-  actor_user_id: string;
+  actor_user_id: string | null;
   actor_email: string | null;
   action: string;
-  changes: Record<string, unknown>;
+  changes: { [key: string]: string | number | boolean | null | { from: unknown; to: unknown } };
   created_at: string;
 };
 
@@ -187,7 +187,7 @@ export const updateRegistrationV2 = createServerFn({ method: "POST" })
           registration_id: data.id,
           actor_user_id: context.userId,
           action: "admin_update",
-          changes,
+          changes: changes as Json,
         });
       if (auditError) throw new Error("Registration updated, but audit history could not be saved");
     }
@@ -266,8 +266,8 @@ export const listRegistrationAuditV2 = createServerFn({ method: "GET" })
     }
     return (rows ?? []).map((row) => ({
       ...row,
-      actor_email: emails.get(row.actor_user_id) ?? null,
-    })) as RegistrationAuditEntry[];
+      actor_email: row.actor_user_id ? emails.get(row.actor_user_id) ?? null : null,
+    })) as unknown as RegistrationAuditEntry[];
   });
 
 export const getRegistrationHistoricalQuestionsV2 = createServerFn({ method: "GET" })

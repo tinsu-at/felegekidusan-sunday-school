@@ -193,7 +193,7 @@ export function AdminSettingsPanel({
                     role: String(fd.get("account_role") ?? "admin") as "admin" | "owner",
                   },
                 });
-                toast.success(res.invited ? o.invited : o.added);
+                toast.success((res as { invited?: boolean }).invited ? o.invited : o.added);
                 form.reset();
                 await queryClient.invalidateQueries({
                   queryKey: ["dashboard-admins"],
